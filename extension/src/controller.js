@@ -28,10 +28,16 @@
     }
 
     // Toute attente passe par ici : si la génération a changé, la suite s'arrête.
-    async function step(mine, promise) {
-      const v = await promise;
+    function guard(mine) {
       if (gen !== mine) throw STALE;
-      return v;
+    }
+
+    async function step(mine, promise) {
+      try {
+        return await promise;
+      } finally {
+        guard(mine); // aussi quand la promesse rejette après un changement de génération
+      }
     }
 
     async function rawFresh(mine) {
@@ -41,6 +47,7 @@
     }
 
     async function afterFresh(mine, f) {
+      guard(mine);
       if (f.userId !== null && f.userId !== undefined) await step(mine, cache.setLastUserId(f.userId));
       if (record && (f.userId == null || f.userId === recordUserId)) record.template = f.template;
     }
@@ -81,7 +88,7 @@
       const signal = ctrl.signal;
       const onProgress = progressFn(mine, 'full');
       const { entries } = await step(mine, deps.loadAll({ pageCount, expectedTotal: null, onProgress, signal }));
-      const extra = await step(mine, deps.loadNew({ knownIds: new Set(entries.map((e) => e.id)), onProgress, signal }));
+      const extra = await step(mine, deps.loadNew({ knownIds: new Set(entries.map((e) => e.id)), onProgress: () => {}, signal }));
       const merged = [...extra.entries, ...entries];
       const f2 = await strictFresh(mine);
       const sameUser = f.userId == null || f2.userId == null || f.userId === f2.userId;
@@ -89,6 +96,7 @@
       const rec = { entries: merged, total: f2.total, freshness: f2.freshness, template: f2.template, loadedAt: now() };
       const uid = f2.userId ?? null;
       if (uid !== null) await step(mine, cache.put(uid, rec));
+      guard(mine);
       adopt(rec, uid);
       log('load:done', { entries: merged.length });
       setReady();
@@ -106,9 +114,11 @@
         const uid = await step(mine, cache.getLastUserId());
         const cached = uid == null ? null : await step(mine, cache.get(uid));
         if (!cached) {
+          guard(mine);
           setState({ mode: 'error', error: 'freshness', progress: null });
           return;
         }
+        guard(mine);
         adopt(cached, uid);
         setReady({ freshnessUnknown: true });
         return;
@@ -116,6 +126,7 @@
       await afterFresh(mine, f);
       const cached = f.userId == null ? null : await step(mine, cache.get(f.userId));
       if (cached) {
+        guard(mine);
         cached.template = f.template;
         adopt(cached, f.userId);
         const stale = cached.freshness !== f.freshness;
@@ -126,10 +137,26 @@
       await fullRead(mine, f);
     }
 
+    // Autre compte : plus rien de l'ancien n'est servi pendant la lecture.
+    function dropIfOtherAccount(f) {
+      if (f.userId != null && recordUserId != null && f.userId !== recordUserId) adopt(null, null);
+    }
+
     async function refreshBody(mine) {
       if (!record) {
+        setState({ mode: 'loading', error: null, progress: null });
+        let f0;
+        try {
+          f0 = await rawFresh(mine);
+        } catch (err) {
+          if (err === STALE) throw err;
+          guard(mine);
+          setState({ mode: 'error', error: 'freshness', progress: null });
+          return;
+        }
+        await afterFresh(mine, f0);
         log('refresh:full');
-        await fullRead(mine, await strictFresh(mine));
+        await fullRead(mine, f0);
         return;
       }
       setState({ mode: 'loading', error: null, progress: { phase: 'incremental', pagesRead: 0, pageCount: null } });
@@ -142,9 +169,12 @@
           signal: ctrl.signal,
         }));
       } catch (err) {
-        if (err !== STALE && err?.name === 'IncompleteLoadError' && err.reason === 'too-many-new') {
+        guard(mine);
+        if (err?.name === 'IncompleteLoadError' && err.reason === 'too-many-new') {
           log('refresh:full');
-          await fullRead(mine, await strictFresh(mine));
+          const f1 = await strictFresh(mine);
+          dropIfOtherAccount(f1);
+          await fullRead(mine, f1);
           return;
         }
         throw err;
@@ -153,6 +183,7 @@
       const merged = [...extra.entries, ...known];
       if (f.userId != null && recordUserId != null && f.userId !== recordUserId) {
         log('refresh:full');
+        dropIfOtherAccount(f);
         await fullRead(mine, f);
         return;
       }
@@ -161,6 +192,7 @@
         const rec = { entries: merged, total: f.total, freshness: f.freshness, template: f.template, loadedAt: now() };
         const uid = f.userId ?? recordUserId;
         if (uid != null) await step(mine, cache.put(uid, rec));
+        guard(mine);
         adopt(rec, uid);
         log('load:done', { entries: merged.length });
         setReady();
@@ -203,6 +235,9 @@
       if (inflight) return inflight;
       const mine = ++gen;
       ctrl = new AbortController();
+      record = null;
+      recordUserId = null;
+      memo = { record: null, groups: null };
       setState({ mode: 'loading', error: null, progress: null, stale: false, freshnessUnknown: false });
       return start(mine, enterBody);
     }

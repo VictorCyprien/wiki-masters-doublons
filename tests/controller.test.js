@@ -38,7 +38,7 @@ function setup(over = {}) {
 }
 const ents = (n, p = 'x') => Array.from({ length: n }, (_, i) => makeEntry({ id: `${p}${i}`, title: `${p}${i}` }));
 
-test('pas de cache : lecture complète, loading puis ready, cache rempli', async () => {
+test('pas de cache : total frais incohérent -> mismatch, error incomplete, rien en cache', async () => {
   const entries = ents(5);
   const { c, cache, states, calls } = setup({
     fetchFreshness: async () => fresh({ total: 13522 }),
@@ -443,4 +443,96 @@ test('collection sans doublon : liste vide, summary 0, stats total 0', async () 
   assert.deepEqual(c.respond(LIST).collection, []);
   assert.deepEqual(c.getState().summary, { cards: 0, extra: 0 });
   assert.equal(c.respond('/api/my-collection/stats?sort=rarity').total, 0);
+});
+
+test('refresh puis exit, loadNew rejette too-many-new : aucun appel de plus, reste off', async () => {
+  const gate = deferred();
+  const { c, cache, calls } = setup({ loadNew: async () => { await gate.promise; throw new IncompleteLoadError({ reason: 'too-many-new' }); } });
+  await cache.put('u1', rec(ents(3), { freshness: 'F0' }));
+  await c.enter();
+  const before = calls.fresh;
+  const p = c.refresh();
+  await tick();
+  c.exit();
+  gate.resolve();
+  await p;
+  await tick();
+  assert.equal(calls.fresh, before);
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(c.getState().mode, 'off');
+});
+
+test('exit puis fetchFreshness rejette en retard : lastUserId non lu, état inchangé', async () => {
+  const gate = deferred();
+  const { c, cache, states } = setup({ fetchFreshness: async () => { await gate.promise; throw new Error('x'); } });
+  let read = 0;
+  const orig = cache.getLastUserId;
+  cache.getLastUserId = (...a) => { read += 1; return orig(...a); };
+  const p = c.enter();
+  await tick();
+  c.exit();
+  const n = states.length;
+  gate.resolve();
+  await p;
+  await tick();
+  assert.equal(read, 0);
+  assert.equal(states.length, n);
+  assert.equal(c.getState().mode, 'off');
+});
+
+test('changement de compte pendant refresh : ancien enregistrement plus servi, échec -> mode error', async () => {
+  const gate = deferred();
+  let user = 'u1';
+  const s = setup({
+    fetchFreshness: async () => fresh({ userId: user, total: 2 }),
+    loadNew: async () => ({ entries: [] }),
+    loadAll: async () => { await gate.promise; throw new IncompleteLoadError({ reason: 'network' }); },
+  });
+  await s.cache.put('u1', rec(ents(3, 'o')));
+  await s.c.enter();
+  user = 'u2';
+  const p = s.c.refresh();
+  await tick();
+  assert.equal(s.c.shouldIntercept('/api/my-collection?page=0'), false);
+  gate.resolve();
+  await p;
+  assert.equal(s.c.getState().mode, 'error');
+});
+
+test('enter() en mode actif, fetchFreshness échoue sans cache lastUserId : plus d\'interception', async () => {
+  let fail = false;
+  const { c, cache } = setup({ fetchFreshness: async () => { if (fail) throw new Error('x'); return fresh(); } });
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), true);
+  fail = true;
+  await cache.setLastUserId('nobody');
+  await c.enter();
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), false);
+  assert.equal(c.getState().error, 'freshness');
+});
+
+test('vérification de la lecture complète : la progression full est conservée', async () => {
+  const e = ents(5);
+  const { c, states } = setup({
+    loadAll: async (o) => { o.onProgress({ pagesRead: 1, pageCount: 1 }); return { entries: e.slice(0, 4) }; },
+    loadNew: async (o) => { o.onProgress({ pagesRead: 1, pageCount: null }); assert.equal(c.getState().progress.phase, 'full'); assert.equal(c.getState().progress.pageCount, 1); return { entries: [e[4]] }; },
+  });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.ok(!states.some((s) => s.progress && s.progress.phase === 'full' && s.progress.pageCount === null));
+});
+
+test('refresh sans enregistrement, fetchFreshness échoue : loading puis error freshness', async () => {
+  let fail = true;
+  const { c, states } = setup({ fetchFreshness: async () => { if (fail) throw new Error('x'); return fresh(); } });
+  await c.enter();
+  assert.equal(c.getState().error, 'freshness');
+  const n = states.length;
+  const p = c.refresh();
+  assert.equal(c.getState().mode, 'loading');
+  assert.ok(states.length > n);
+  await p;
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'freshness');
 });
