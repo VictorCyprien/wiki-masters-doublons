@@ -455,6 +455,12 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 5: Dépôt GitHub.** Demander l'accord de Victor (nom du dépôt, visibilité publique) avant `gh repo create` et le premier `push`.
 - [ ] **Step 6: Soumission par Victor.** Victor crée son compte développeur Chrome Web Store (5 $) et téléverse le zip. Il remplit la fiche depuis `store/listing.md`, avec l'URL de `PRIVACY.md` sur GitHub, puis soumet. Claude ne soumet rien.
 
+> **Amendement 2026-11-02 (skill `modern-web-guidance:chrome-extensions`, invoquée par Victor) — prévaut sur le texte de la tâche :**
+> - `store/listing.md` est remplacé par **`CHROMEWEBSTORE.md`** à la racine, rédigé d'après `references/webstore/chromewebstore-template.md` de la skill : fiche (description courte et longue, orientées usage, sans détail technique), justification précise de l'accès à `https://www.wiki-masters.com/*` (le content script vaut accès au site pour la relecture Google), déclaration d'usage des données, historique des versions.
+> - `PRIVACY.md` suit `references/webstore/privacy-policy.md` ; son URL publique doit être en ligne avant la soumission et correspondre à la déclaration d'usage des données.
+> - Icônes : trois fichiers PNG distincts `extension/icons/icon-16.png`, `icon-48.png`, `icon-128.png`, aux dimensions exactes (`references/extensions/icons.md`), déclarés dans `icons` du manifeste ; test du manifeste : chaque icône existe.
+> - Avant la soumission : passer `references/webstore/review-checklist.md` ; le zip ne contient que le contenu d'`extension/` (ni `.git/`, ni `CHROMEWEBSTORE.md`, ni `docs/`).
+
 > **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
 > - **Historique (I13).** Avant le premier `push` : l'historique contient le préfixe de 8 caractères du `user_id` de Victor (exemple de la spec, commits `9a9ecf8` à `6274536`, masqué depuis `19abc53`). Proposer à Victor, avec AskUserQuestion : pousser un historique réécrit (un seul commit initial) ou tel quel. Rien n'est poussé avant sa réponse.
 > - **README (M24).** « un échange un-contre-un est vu au prochain ↻ » suppose qu'une carte reçue a un nouvel `id` et un `obtained_at` récent : l'écrire comme hypothèse non vérifiée.
