@@ -11,12 +11,16 @@ L'API du site renvoie déjà le nombre d'exemplaires (`count`) pour chaque carte
 
 Le script sera partagé avec d'autres joueurs, dont les collections peuvent être bien plus petites ou bien plus grandes que celle de Victor.
 
+## Amendements après la sonde (2026-11-02)
+
+La sonde a fait tomber H3 : `count` vaut toujours 1 et un doublon est une **carte présente en plusieurs entrées**. Victor a tranché la nouvelle règle, l'affichage d'une carte par groupe et le rafraîchissement incrémental ; les sections ci-dessous sont mises à jour. Résultats détaillés : `docs/carnet-api.md`. La recherche du site se reproduit exactement (H8 tient) : le repli « recherche approximative » ne sert plus.
+
 ## Objectifs
 
 - Ajouter « Doublons » comme cinquième choix dans la liste déroulante de tri existante (Rareté, Nom, Favoris, Date d'ajout, **Doublons**).
-- En mode Doublons, afficher uniquement les cartes avec `count ≥ 2`, triées par `count` décroissant.
-- Les cartes affichées ont **exactement le rendu des cartes du site**, plus un badge `×N` (N = `count`). Un clic sur une carte fait **la même chose que sur le site**.
-- Une ligne de résumé au-dessus de la grille : « X cartes en double · Y exemplaires en trop » (Y = somme de `count − 1`). À droite : date du dernier chargement et bouton « ↻ rafraîchir ».
+- En mode Doublons, afficher uniquement les cartes possédées en au moins 2 exemplaires, triées par nombre d'exemplaires décroissant. **Règle (Victor, 2026-11-02, après la sonde 3)** : les entrées se regroupent par (`card_id`, `is_shiny`) ; le nombre d'exemplaires N d'un groupe est la somme des `count` de ses entrées ; un doublon est un groupe avec N ≥ 2. (Sur le compte de Victor, chaque exemplaire est une entrée séparée avec `count: 1`.)
+- Les cartes affichées ont **exactement le rendu des cartes du site**, plus un badge `×N`. **Une seule carte par groupe** (décision de Victor) : une entrée représentante du groupe ; le clic ouvre la fenêtre de cet exemplaire-là. Un clic sur une carte fait **la même chose que sur le site**.
+- Une ligne de résumé au-dessus de la grille : « X cartes en double · Y exemplaires en trop » (X = nombre de groupes en double, Y = somme de N − 1). À droite : date du dernier chargement et bouton « ↻ rafraîchir ».
 - En mode Doublons, la recherche (« Rechercher par titre ou catégorie… »), le filtre d'étiquettes (« Toutes les étiquettes ») et les filtres de rareté (L, UR, SR, R, PC, C) continuent de fonctionner, combinés au filtre doublon.
 - La pagination du site reflète la liste de doublons filtrée (nombre de pages juste).
 - Fonctionner pour des collections de quelques dizaines à plus de 10 000 entrées.
@@ -26,7 +30,7 @@ Le script sera partagé avec d'autres joueurs, dont les collections peuvent êtr
 - Échanger, recycler, vendre ou fusionner des cartes.
 - Toute écriture vers l'API (le script ne fait que des `GET` sur `my-collection`).
 - Mobile, Firefox, Safari. Seuls les navigateurs Chromium (Chrome, Arc, Brave) sont visés pour cette version.
-- Fusionner shiny et normale : **une carte shiny et la même carte normale sont deux cartes distinctes**. Un doublon, c'est `count ≥ 2` sur une même entrée.
+- Fusionner shiny et normale : **une carte shiny et la même carte normale sont deux cartes distinctes**. Un doublon, c'est un groupe (`card_id`, `is_shiny`) d'au moins 2 exemplaires.
 - Un serveur, une page séparée.
 - Un userscript (Tampermonkey, Violentmonkey) : écarté le 2026-11-02 par Victor, car il oblige chaque joueur à installer un gestionnaire de scripts et à activer une option de Chrome. Une extension du Chrome Web Store s'installe en un clic.
 
@@ -109,7 +113,7 @@ Si aucun cache n'existe pour le compte, le script lit toutes les pages de `my-co
 ### Vue chargée
 
 - Ligne de résumé en haut : « X cartes en double · Y exemplaires en trop », puis « chargé il y a … · ↻ rafraîchir ».
-- Grille de cartes au rendu natif du site, filtrée sur `count ≥ 2`, triée par `count` décroissant, avec badge `×N`.
+- Grille de cartes au rendu natif du site : une carte par groupe en double, triée par N décroissant, avec badge `×N`.
 - Les totaux du résumé suivent les filtres actifs (recherche, étiquettes, rareté).
 
 Maquette de référence : `.superpowers/brainstorm/…/content/vue-a-v2.html` (non versionnée). L'apparence finale suit le style du site.
@@ -124,7 +128,8 @@ Si la sonde ne parvient pas à reproduire exactement la règle de recherche du s
 
 - Stocké localement dans le navigateur, dans un stockage sans la limite de 5 Mo de `localStorage` (13 500 entrées peuvent la dépasser) : IndexedDB, ou `chrome.storage.local` avec la permission `unlimitedStorage`, au choix du constructeur.
 - Rattaché au compte (`user_id`) : deux comptes sur le même navigateur ne se mélangent pas.
-- N'expire jamais seul. Le bouton « ↻ rafraîchir » le reconstruit.
+- N'expire jamais seul. Le bouton « ↻ rafraîchir » le met à jour.
+- **Rafraîchissement incrémental** (décision de Victor, 2026-11-02) : une lecture complète prend environ 26 minutes sur la collection de Victor (13 522 entrées, 4,4 s par page en moyenne). « ↻ rafraîchir » lit donc les pages sous le tri « Date d'ajout » (les plus récentes d'abord) jusqu'à retomber sur une entrée déjà en cache, et ajoute les nouvelles. Puis il compare le nombre d'entrées du cache au `total` du serveur : s'ils diffèrent (une carte est partie : échange, vente…), il relance une lecture complète. La lecture complète n'a donc lieu qu'à la première ouverture et quand une carte a quitté la collection.
 - Garde la date du dernier chargement complet.
 
 ### Fraîcheur (décision de Victor : vérification légère)
