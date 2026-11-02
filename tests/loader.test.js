@@ -378,3 +378,15 @@ test('createSerialFetch : abandon d’un appel en file → rejet immédiat, la c
   assert.equal(await (await cc).text(), '/C');
   assert.deepEqual(started, ['/A', '/C']);
 });
+
+test('onRetry annonce l\'attente réelle (plancher de 400 ms) et le journal garde load:retry', async () => {
+  const retries = [];
+  const logs = [];
+  const e = env(() => status(503), { backoffMs: [100, 200, 300], onRetry: (r) => retries.push(r), log: (k, d) => logs.push([k, d]) });
+  await assert.rejects(loadAllPages({ ...e, pageCount: 1, expectedTotal: null }));
+  assert.deepEqual(retries.map((r) => r.waitMs), [400, 400, 400]);
+  assert.deepEqual(e.sleeps, [400, 400, 400]);
+  const l = logs.filter(([k]) => k === 'load:retry');
+  assert.equal(l.length, 3);
+  assert.deepEqual(l[0][1], { page: 0, attempt: 1, waitMs: 400, reason: 'http', status: 503 });
+});

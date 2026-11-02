@@ -73,9 +73,10 @@
       const { reason, status, retryAfter } = failure;
       if (retryAfter !== null && retryAfter > maxRetryAfterMs) throw new IncompleteLoadError({ reason: 'retry-after', page, status });
       if (attempt >= backoffMs.length) throw new IncompleteLoadError({ reason, page, status });
-      const waitMs = retryAfter !== null ? retryAfter : backoffMs[attempt];
+      const waitMs = Math.max(retryAfter !== null ? retryAfter : backoffMs[attempt], delayMs);
+      log('load:retry', { page, attempt: attempt + 1, waitMs, reason, status });
       onRetry({ page, attempt: attempt + 1, waitMs });
-      await pause(Math.max(waitMs, delayMs), o);
+      await pause(waitMs, o);
     }
   }
 

@@ -576,7 +576,7 @@ test('échec à la page d\'indice 96 : putPartial, error, resumeAt ; refresh rep
 
 test('reprise de plus de 24 h : ignorée, départ à 0', async () => {
   const { c, cache, calls } = setup();
-  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 1, savedAt: 4242 - 24 * 3600 * 1000 - 1 });
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 1, savedAt: 4242 - 24 * 3600 * 1000 - 1, total: 5, rarityCounts: {} });
   await c.enter();
   assert.equal(calls.loadAll[0].startPage, 0);
   assert.deepEqual(calls.loadAll[0].initialEntries, []);
@@ -585,7 +585,7 @@ test('reprise de plus de 24 h : ignorée, départ à 0', async () => {
 
 test('reprise de 24 h pile : acceptée ; enter() sans enregistrement reprend automatiquement', async () => {
   const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: 500 }) });
-  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242 - 24 * 3600 * 1000 });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242 - 24 * 3600 * 1000, total: 500, rarityCounts: {} });
   await c.enter();
   assert.equal(calls.loadAll[0].startPage, 3);
   assert.equal(calls.loadAll[0].initialEntries.length, 150);
@@ -593,7 +593,7 @@ test('reprise de 24 h pile : acceptée ; enter() sans enregistrement reprend aut
 
 test('reprise inutilisable (nextPage >= pageCount) : ignorée et effacée', async () => {
   const { c, cache, calls } = setup();
-  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 1, savedAt: 4242 });
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 1, savedAt: 4242, total: 5, rarityCounts: {} });
   await c.enter();
   assert.equal(calls.loadAll[0].startPage, 0);
   assert.equal(await cache.getPartial('u1'), null);
@@ -624,7 +624,7 @@ test('mismatch final : clearPartial, pas de resumeAt', async () => {
     fetchFreshness: async () => fresh({ total: 13522 }),
     loadAll: async () => ({ entries: objs(0, 5) }),
   });
-  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 271, savedAt: 4242 });
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 271, savedAt: 4242, total: 13522, rarityCounts: {} });
   await c.enter();
   assert.equal(c.getState().error, 'incomplete');
   assert.equal(c.getState().resumeAt, null);
@@ -666,4 +666,91 @@ test('attente d\'essai : progress.retryInMs renseigné puis remis à null', asyn
   assert.ok(waiting);
   assert.equal(waiting.progress.phase, 'full');
   assert.equal(states.filter((s) => s.progress).at(-1).progress.retryInMs, null);
+});
+
+// --- Fix round 1 ---
+const withRarity = (total, rarityCounts) => fresh({ total, template: { collection: [], tagOptions: [], rarityCounts } });
+
+test('reprise : une suppression (total ou rareté en baisse) écarte le partiel', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => withRarity(499, { C: 299, R: 200 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242, total: 500, rarityCounts: { C: 300, R: 200 } });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.deepEqual(calls.loadAll[0].initialEntries, []);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('reprise : une rareté en baisse compensée par un ajout (total égal) est écartée', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => withRarity(500, { C: 299, R: 201 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242, total: 500, rarityCounts: { C: 300, R: 200 } });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+});
+
+test('reprise : de purs ajouts (total et rareté en hausse) gardent le partiel', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => withRarity(502, { C: 301, R: 200, E: 1 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 11, savedAt: 4242, total: 500, rarityCounts: { C: 300, R: 200 } });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 3);
+  assert.equal(calls.loadAll[0].initialEntries.length, 150);
+});
+
+test('reprise : un partiel sans total/rarityCounts (ancien format) est écarté', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: 500 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242 });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('le partiel sauvegardé porte total et rarityCounts de la fraîcheur de départ', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => withRarity(13522, { C: 5 }),
+    loadAll: async (o) => {
+      o.onPage({ page: 9, entries: objs(0, 500) });
+      throw new IncompleteLoadError({ reason: 'http', page: 10, status: 503 });
+    },
+  });
+  await c.enter();
+  const p = await cache.getPartial('u1');
+  assert.equal(p.total, 13522);
+  assert.deepEqual(p.rarityCounts, { C: 5 });
+});
+
+test('pas de point de sauvegarde quand page + 1 === pageCount', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 500 }), // 10 pages
+    loadAll: async (o) => { o.onPage({ page: 9, entries: objs(0, 500) }); await tick(); return { entries: objs(0, 5) }; },
+  });
+  let wrote = false;
+  const orig = cache.putPartial;
+  cache.putPartial = async (...a) => { wrote = true; return orig(...a); };
+  await c.enter();
+  assert.equal(wrote, false);
+});
+
+test('échec sans aucune entrée gardée : pas de partiel, pas de resumeAt', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async () => { throw new IncompleteLoadError({ reason: 'http', page: 0, status: 503 }); },
+  });
+  await c.enter();
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(c.getState().resumeAt, null);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('échec d\'écriture du partiel : pas de resumeAt', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      o.onPage({ page: 3, entries: objs(0, 200) });
+      throw new IncompleteLoadError({ reason: 'http', page: 4, status: 503 });
+    },
+  });
+  cache.putPartial = async () => { throw new Error('quota'); };
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(c.getState().resumeAt, null);
 });

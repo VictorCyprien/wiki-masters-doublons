@@ -92,8 +92,17 @@
 
     const DAY_MS = 24 * 3600 * 1000;
 
+    // Aucune carte retirée depuis la sauvegarde : le total et chaque rareté n'ont pas baissé (les ajouts sont sûrs).
+    function noRemoval(partial, f) {
+      const was = partial.rarityCounts;
+      if (typeof partial.total !== 'number' || !was || typeof was !== 'object') return false;
+      if (typeof f.total !== 'number' || f.total < partial.total) return false;
+      const now_ = f.template?.rarityCounts ?? {};
+      return Object.keys(was).every((r) => (now_[r] ?? 0) >= was[r]);
+    }
+
     // Lecture reprise d'un enregistrement partiel valide (moins de 24 h, page encore à lire), sinon null.
-    async function loadPartial(mine, uid, pageCount) {
+    async function loadPartial(mine, uid, pageCount, f) {
       if (uid == null) return null;
       let partial = null;
       try {
@@ -103,7 +112,7 @@
       }
       if (!partial) return null;
       const valid = Array.isArray(partial.entries) && Number.isInteger(partial.nextPage) && partial.nextPage >= 0
-        && partial.nextPage < pageCount && now() - partial.savedAt <= DAY_MS;
+        && partial.nextPage < pageCount && now() - partial.savedAt <= DAY_MS && noRemoval(partial, f);
       if (valid) return partial;
       await dropPartial(mine, uid);
       return null;
@@ -122,7 +131,7 @@
     async function fullRead(mine, f) {
       const pageCount = Math.ceil(f.total / site.PAGE_SIZE);
       const uid0 = f.userId ?? null;
-      const partial = await loadPartial(mine, uid0, pageCount);
+      const partial = await loadPartial(mine, uid0, pageCount, f);
       const startPage = partial ? partial.nextPage : 0;
       const initialEntries = partial ? partial.entries : [];
       setState({ mode: 'loading', error: null, resumeAt: null, progress: { phase: 'full', pagesRead: startPage, pageCount, retryInMs: null } });
@@ -131,7 +140,7 @@
       let latest = initialEntries; // entrées lues jusqu'ici (référence du chargeur)
       let writes = Promise.resolve(); // sauvegardes en file : une à la fois, et avant tout effacement
       const save = (entries, nextPage) => {
-        const snapshot = { entries: entries.slice(), nextPage, pageCount, savedAt: now() };
+        const snapshot = { entries: entries.slice(), nextPage, pageCount, savedAt: now(), total: f.total, rarityCounts: { ...(f.template?.rarityCounts ?? {}) } };
         writes = writes.then(() => {
           if (gen !== mine) return undefined;
           return cache.putPartial(uid0, snapshot);
@@ -140,7 +149,7 @@
       const onPage = ({ page, entries }) => {
         if (gen !== mine) return;
         latest = entries;
-        if (uid0 !== null && (page + 1) % 10 === 0) save(entries, page + 1);
+        if (uid0 !== null && (page + 1) % 10 === 0 && page + 1 < pageCount) save(entries, page + 1);
       };
       let entries;
       try {
@@ -150,10 +159,22 @@
       } catch (err) {
         if (err?.name === 'IncompleteLoadError' && Number.isInteger(err.page) && err.reason !== 'mismatch' && uid0 !== null) {
           guard(mine);
-          save(latest, err.page);
           await step(mine, writes);
           guard(mine);
-          setState({ resumeAt: { page: err.page + 1, pageCount } });
+          if (latest.length > 0) {
+            let saved = false;
+            try {
+              await step(mine, cache.putPartial(uid0, {
+                entries: latest.slice(), nextPage: err.page, pageCount, savedAt: now(), total: f.total,
+                rarityCounts: { ...(f.template?.rarityCounts ?? {}) },
+              }));
+              saved = true;
+            } catch (werr) {
+              if (werr === STALE) throw werr;
+            }
+            guard(mine);
+            if (saved) setState({ resumeAt: { page: err.page + 1, pageCount } });
+          }
         }
         throw err;
       }
