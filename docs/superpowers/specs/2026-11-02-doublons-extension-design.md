@@ -1,4 +1,4 @@
-# Vue « Doublons » pour Wiki Masters — design
+# Vue « Doublons » pour Wiki Masters : extension Chrome — design
 
 Date : 2026-11-02
 Statut : en relecture
@@ -7,7 +7,7 @@ Statut : en relecture
 
 Sur wiki-masters.com, la page collection ne permet pas de trier ni de filtrer les cartes possédées en plusieurs exemplaires. Victor veut **voir ses doublons**, triés du plus grand nombre d'exemplaires au plus petit, directement dans la page collection du site, comme s'il s'agissait d'une fonction native.
 
-L'API du site renvoie déjà le nombre d'exemplaires (`count`) pour chaque carte. Le projet est un userscript qui exploite ce champ.
+L'API du site renvoie déjà le nombre d'exemplaires (`count`) pour chaque carte. Le projet est une extension Chrome, publiée sur le Chrome Web Store, qui exploite ce champ.
 
 Le script sera partagé avec d'autres joueurs, dont les collections peuvent être bien plus petites ou bien plus grandes que celle de Victor.
 
@@ -27,7 +27,8 @@ Le script sera partagé avec d'autres joueurs, dont les collections peuvent êtr
 - Toute écriture vers l'API (le script ne fait que des `GET` sur `my-collection`).
 - Mobile, Firefox, Safari. Seuls les navigateurs Chromium (Chrome, Arc, Brave) sont visés pour cette version.
 - Fusionner shiny et normale : **une carte shiny et la même carte normale sont deux cartes distinctes**. Un doublon, c'est `count ≥ 2` sur une même entrée.
-- Un serveur, une page séparée, une extension maison.
+- Un serveur, une page séparée.
+- Un userscript (Tampermonkey, Violentmonkey) : écarté le 2026-11-02 par Victor, car il oblige chaque joueur à installer un gestionnaire de scripts et à activer une option de Chrome. Une extension du Chrome Web Store s'installe en un clic.
 
 ## Anti-objectifs
 
@@ -84,13 +85,14 @@ L'API n'est pas documentée. Conformément à la conviction de Victor « Sonde d
 | H4 | Expliquer les 270 pages : l'API renvoie-t-elle des cartes non possédées (`count` = 0) ? | Rien à changer côté design (le filtre `count ≥ 2` les écarte), mais le fait va au carnet. |
 | H5 | L'API accepte-t-elle un tri ou un filtre côté serveur sur `count` (ex. `sort=count`) ? | Si oui : utiliser le serveur plutôt que tout lire, le script devient bien plus léger. Si non : lecture complète + cache, comme décrit ici. |
 | H6 | L'API accepte-t-elle un paramètre de taille de page (ex. `limit`, `per_page`, `size`) pour réduire le nombre d'appels ? | Si non : 50 par page. |
-| H7 | Le script, injecté au début du chargement de la page, peut intercepter l'appel du site à `my-collection` (`fetch` ou `XMLHttpRequest`) et lui substituer une réponse ; le site affiche alors ces cartes lui-même (rendu, clic, pagination). | **Repli décidé** : le script dessine sa propre grille en clonant le HTML d'une carte rendue par le site et en reproduisant son comportement au clic. |
+| H7 | Le script de l'extension, exécuté dans le contexte de la page (content script avec `world: "MAIN"`, `run_at: "document_start"`), peut intercepter l'appel du site à `my-collection` (`fetch` ou `XMLHttpRequest`) et lui substituer une réponse ; le site affiche alors ces cartes lui-même (rendu, clic, pagination). | **Repli décidé** : le script dessine sa propre grille en clonant le HTML d'une carte rendue par le site et en reproduisant son comportement au clic. |
 | H8 | Relever comment le site encode recherche, étiquettes et rareté dans la requête, et la règle exacte de la recherche (titre et/ou catégorie, casse, accents, sous-chaîne). | Le script doit reproduire ces règles sur son cache ; sans elles, le résultat filtré serait faux. |
 | H9 | Comportement du serveur face à des appels rapprochés (429, `Retry-After`, 5xx). | Ajuster l'espacement. |
 | H10 | Ce que renvoie `stats=1`. | Information seulement. |
 | H11 | La liste déroulante de tri accepte qu'on y injecte un choix ; on peut détecter sa sélection, afficher « Doublons » comme libellé sélectionné, et revenir proprement aux autres tris. | Repli : un bouton « Doublons » juste à droite de la liste déroulante. |
 | H12 | Il existe un signal de fraîcheur peu coûteux (un seul appel) qui change quand un `count` change, pas seulement quand une nouvelle carte entre : par exemple un total d'exemplaires dans `stats=1`, ou le `obtained_at` le plus récent sous le tri « Date d'ajout » s'il est mis à jour à chaque nouvel exemplaire. | Repli : comparer le seul total d'entrées. La limite (un exemplaire de plus d'une carte déjà possédée passe inaperçu) est alors écrite dans le README et rappelée par la date « chargé il y a … ». |
 | H13 | Les contrôles de la page (liste déroulante de tri, recherche, étiquettes, puces de rareté) se repèrent par la structure de la page, sans dépendre de leurs libellés français. | Repérer par libellés français, et le noter comme limite dans le README. |
+| H14 | Verdict peut lancer son navigateur avec l'extension non empaquetée chargée. | Pendant le développement, injecter le code du script dans la page via Verdict (`verdict js`) avant de choisir « Doublons » : l'interception doit seulement être en place avant le prochain appel du site à `my-collection`. Le comportement au tout premier chargement de la page est alors vérifié par Victor dans son Chrome. |
 
 La sonde journalise des métadonnées (statuts HTTP, formes des réponses, noms de paramètres, en-têtes utiles), jamais de cookie ni de jeton. Ses résultats vont dans un carnet versionné du dépôt (`docs/carnet-api.md`), faits datés d'un côté, hypothèses de l'autre.
 
@@ -120,7 +122,7 @@ Si la sonde ne parvient pas à reproduire exactement la règle de recherche du s
 
 ### Cache
 
-- Stocké dans IndexedDB (13 500 entrées peuvent dépasser la limite de `localStorage`).
+- Stocké localement dans le navigateur, dans un stockage sans la limite de 5 Mo de `localStorage` (13 500 entrées peuvent la dépasser) : IndexedDB, ou `chrome.storage.local` avec la permission `unlimitedStorage`, au choix du constructeur.
 - Rattaché au compte (`user_id`) : deux comptes sur le même navigateur ne se mélangent pas.
 - N'expire jamais seul. Le bouton « ↻ rafraîchir » le reconstruit.
 - Garde la date du dernier chargement complet.
@@ -141,11 +143,15 @@ Chaque appel du site passe tel quel, sans modification ni retard. Le script n'aj
 
 ## Contraintes
 
-- **Support** : userscript pour Tampermonkey ou Violentmonkey, navigateurs Chromium.
-- **Livrable** : un seul fichier `.user.js`, sans étape de build.
+- **Support** : extension Chrome Manifest V3, pour les navigateurs Chromium (Chrome, Arc, Brave installent depuis le Chrome Web Store).
+- **Livrable** : un dossier d'extension en JavaScript simple, sans étape de build, zippé pour le store.
+- **Permissions** : le strict minimum. Accès au seul site `https://www.wiki-masters.com/*`. Pas de permission `tabs`, `history` ni accès à d'autres sites. Aucun code chargé à distance (interdit en Manifest V3 de toute façon).
 - **Réseau** : uniquement des `GET` same-origin vers `wiki-masters.com`. Aucun appel vers un tiers, aucune donnée envoyée ailleurs, aucun mot de passe ni jeton stocké.
 - **Politesse** : appels séquentiels, jamais en parallèle, espacés d'environ 300 à 500 ms.
-- **Distribution** : dépôt GitHub public. Tampermonkey met à jour le script via `@updateURL` / `@downloadURL` pointant sur l'URL raw du fichier, avec un `@version` incrémenté à chaque publication. Un README explique l'installation.
+- **Distribution** : Chrome Web Store, sous le compte développeur de Victor (5 $ une fois ; Victor crée et paie le compte lui-même). Mises à jour automatiques par le store : `version` du manifest incrémentée à chaque publication, chaque version relue par Google (de quelques heures à quelques jours).
+- **Fiche du store** : description, icône 128 px, captures d'écran, déclaration d'usage des données, et une page de confidentialité publique (hébergée sur le dépôt GitHub). Elle dit : l'extension lit la collection du joueur sur wiki-masters.com ; les données restent dans le navigateur ; rien n'est transmis, vendu ni partagé.
+- **Code source** : dépôt GitHub public, avec un README (installation depuis le store, limites connues).
+- **Soumission** : Claude prépare le zip, les textes de la fiche et la page de confidentialité. **Victor soumet lui-même** depuis son compte : c'est une publication, donc une action publique.
 
 ## Accès au site et tests
 
@@ -154,18 +160,21 @@ Chaque appel du site passe tel quel, sans modification ni retard. Le script n'aj
   - H9 (limite de débit) est **observée sans être provoquée** : aucune rafale volontaire pour déclencher un 429. L'espacement de 300 à 500 ms reste une valeur prudente, non validée par un test de charge.
   - La séparation du cache par `user_id` et le cas des petites collections se testent hors navigateur, sur des données d'exemple (fonctions pures), pas sur un second compte réel.
   - La lecture complète des 270 pages se fait le moins souvent possible pendant le développement : une fois pour la sonde si nécessaire, puis depuis le cache.
+- **Charger l'extension pendant le développement** : voir H14. Vérification finale par Victor dans son propre Chrome, avec l'extension chargée en mode développeur, avant la soumission au store.
 - **Langue** : le texte affiché par le script est en français pour la v1 ; le repérage des contrôles ne dépend pas de la langue du site si H13 tient.
 
 ## Lots proposés
 
-1. **Sonde** : vérifier H1 à H13 via Verdict, remplir le carnet. Arrêt si H1 tombe ; si H2 ou H3 tombe, retour vers Victor.
+1. **Sonde** : vérifier H1 à H14 via Verdict, remplir le carnet. Arrêt si H1 tombe ; si H2 ou H3 tombe, retour vers Victor.
 2. **Script** : le mode Doublons complet, vérifié en vrai sur le site avec le compte de Victor.
-3. **Publication** : dépôt GitHub, README, URL d'installation.
+3. **Publication** : dépôt GitHub public, README, zip de l'extension, textes de la fiche du store, page de confidentialité. Soumission au Chrome Web Store par Victor.
 
 ## Décisions prises par Claude (à vérifier par Victor)
 
 - Interception de l'appel API pour que le site affiche lui-même les doublons (H7), avec repli sur le clonage du HTML d'une carte.
-- Cache IndexedDB par `user_id`, sans expiration automatique.
+- Cache local par `user_id`, sans expiration automatique.
+- Extension en JavaScript simple sans étape de build, permission limitée à `wiki-masters.com`.
+- Soumission au store faite par Victor, jamais par Claude.
 - Espacement de 300 à 500 ms, arrêt sur 429/5xx, `Retry-After` respecté.
 - Lecture incomplète jamais affichée comme complète.
 - Repli sur un bouton à côté de la liste déroulante si l'injection d'un choix échoue (H11).
@@ -176,6 +185,7 @@ Chaque appel du site passe tel quel, sans modification ni retard. Le script n'aj
 ## Laissé au constructeur
 
 - L'espacement exact dans la fourchette, le nom du dépôt, la licence.
-- L'organisation interne du fichier et le schéma IndexedDB.
+- L'organisation interne du code et le schéma du cache, IndexedDB ou `chrome.storage.local`.
+- L'icône de l'extension et les captures de la fiche du store.
 - Le style exact du badge `×N` et de la ligne de résumé, en cohérence avec le site.
 - La stratégie de test (fonctions pures testables hors navigateur ; vérification de bout en bout sur le vrai site).
