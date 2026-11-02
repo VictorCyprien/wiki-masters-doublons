@@ -41,3 +41,16 @@ test('memoryStore rend des copies', async () => {
   got.entries.push('y');
   assert.deepEqual(await c.get('A'), rec(1));
 });
+
+test('putPartial / getPartial / clearPartial, séparés par compte, en copies', async () => {
+  const c = createCache(memoryStore());
+  assert.equal(await c.getPartial('A'), null);
+  const part = { entries: [{ id: 'a' }], nextPage: 3, pageCount: 9, savedAt: 5 };
+  await c.putPartial('A', part);
+  part.entries.push({ id: 'b' });
+  assert.deepEqual(await c.getPartial('A'), { entries: [{ id: 'a' }], nextPage: 3, pageCount: 9, savedAt: 5 });
+  assert.equal(await c.getPartial('B'), null);
+  assert.equal(await c.get('A'), null);
+  await c.clearPartial('A');
+  assert.equal(await c.getPartial('A'), null);
+});

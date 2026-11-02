@@ -2,6 +2,7 @@
   const LABELS = Object.freeze({
     option: 'Doublons',
     refresh: '↻ rafraîchir',
+    resume: '↻ Reprendre',
     loadingNote: "Une seule fois, ensuite c'est gardé en cache.",
     updating: 'Mise à jour…',
     stale: 'Ta collection a changé depuis le dernier chargement',
@@ -28,13 +29,19 @@
     return `chargé il y a ${Math.floor(h / 24)} j`;
   }
 
-  function formatProgress({ phase, pagesRead, pageCount }) {
+  function formatProgress({ phase, pagesRead, pageCount, retryInMs }) {
     const head = phase === 'incremental' ? LABELS.updating : 'Lecture de ta collection…';
     const of = pageCount === null || pageCount === undefined ? '' : ` / ${pageCount}`;
-    return `${head} page ${pagesRead}${of}`;
+    const wait = typeof retryInMs === 'number'
+      ? ` — le serveur ne répond pas, nouvel essai dans ${Math.ceil(retryInMs / 1000)} s` : '';
+    return `${head} page ${pagesRead}${of}${wait}`;
   }
 
-  const api = { LABELS, formatSummary, formatLoaded, formatProgress };
+  function formatInterrupted({ page, pageCount }) {
+    return `Lecture interrompue à la page ${page} / ${pageCount} : le serveur ne répond pas. Les pages déjà lues sont gardées.`;
+  }
+
+  const api = { LABELS, formatSummary, formatLoaded, formatProgress, formatInterrupted };
   globalThis.__wmDoublons = Object.assign(globalThis.__wmDoublons || {}, api);
   if (typeof module !== 'undefined') module.exports = api;
 })();

@@ -40,43 +40,54 @@
     checkAbort(signal);
   }
 
-  // Lit une page : au plus une nouvelle tentative, et seulement sur 429/5xx avec Retry-After raisonnable.
+  // Lit une page. Sur 429, 5xx, rejet réseau/délai ou corps illisible : au plus 3 nouveaux essais espacés.
   async function readPage(page, o) {
-    const { fetchPage, parseList, signal, now, maxRetryAfterMs, delayMs, log } = o;
+    const { fetchPage, parseList, signal, now, maxRetryAfterMs, delayMs, backoffMs, log, onRetry } = o;
     for (let attempt = 0; ; attempt += 1) {
       checkAbort(signal);
       const t0 = now();
-      let res;
+      let failure; // { reason, status, retryAfter }
+      let res = null;
       try {
         res = await fetchPage(page, signal);
       } catch {
         checkAbort(signal);
-        throw new IncompleteLoadError({ reason: 'network', page });
+        failure = { reason: 'network', status: null, retryAfter: null };
       }
-      checkAbort(signal);
-      log('load:page', { page, status: res.status, ms: now() - t0 });
-      if (res.ok) {
-        try {
-          return parseList(await res.json());
-        } catch {
-          checkAbort(signal);
-          throw new IncompleteLoadError({ reason: 'network', page, status: res.status });
+      if (res) {
+        checkAbort(signal);
+        log('load:page', { page, status: res.status, ms: now() - t0 });
+        if (res.ok) {
+          try {
+            return parseList(await res.json());
+          } catch {
+            checkAbort(signal);
+            failure = { reason: 'network', status: res.status, retryAfter: null };
+          }
+        } else if (res.status === 429 || res.status >= 500) {
+          failure = { reason: 'http', status: res.status, retryAfter: parseRetryAfter(res.headers.get('Retry-After'), now()) };
+        } else {
+          throw new IncompleteLoadError({ reason: 'http', page, status: res.status });
         }
       }
-      const retryable = res.status === 429 || res.status >= 500;
-      const wait = retryable ? parseRetryAfter(res.headers.get('Retry-After'), now()) : null;
-      if (wait === null || attempt > 0) throw new IncompleteLoadError({ reason: 'http', page, status: res.status });
-      if (wait > maxRetryAfterMs) throw new IncompleteLoadError({ reason: 'retry-after', page, status: res.status });
-      await pause(Math.max(wait, delayMs), o);
+      const { reason, status, retryAfter } = failure;
+      if (retryAfter !== null && retryAfter > maxRetryAfterMs) throw new IncompleteLoadError({ reason: 'retry-after', page, status });
+      if (attempt >= backoffMs.length) throw new IncompleteLoadError({ reason, page, status });
+      const waitMs = retryAfter !== null ? retryAfter : backoffMs[attempt];
+      onRetry({ page, attempt: attempt + 1, waitMs });
+      await pause(Math.max(waitMs, delayMs), o);
     }
   }
 
   // Boucle commune : `visit(list, page)` renvoie true pour s'arrêter.
   async function readPages(opts, maxPages, visit, onEnd) {
-    const o = { delayMs: 400, maxRetryAfterMs: 60000, log: () => {}, onProgress: () => {}, ...opts };
+    const o = {
+      delayMs: 400, maxRetryAfterMs: 60000, backoffMs: [5000, 15000, 45000],
+      log: () => {}, onProgress: () => {}, onRetry: () => {}, startPage: 0, ...opts,
+    };
     try {
-      for (let page = 0; page < maxPages; page += 1) {
-        if (page > 0) await pause(o.delayMs, o);
+      for (let page = o.startPage; page < maxPages; page += 1) {
+        if (page > o.startPage) await pause(o.delayMs, o);
         const list = await readPage(page, o);
         o.onProgress({ pagesRead: page + 1, pageCount: o.pageCount ?? null });
         if (list.length === 0) return onEnd(o, 'empty');
@@ -90,18 +101,25 @@
   }
 
   async function loadAllPages(opts) {
-    const byId = new Map();
-    return readPages(opts, opts.pageCount, (list) => {
-      for (const e of list) {
-        if (!byId.has(e.id)) byId.set(e.id, e);
+    const acc = [];
+    const ids = new Set();
+    const add = (e) => {
+      if (!ids.has(e.id)) {
+        ids.add(e.id);
+        acc.push(e);
       }
+    };
+    for (const e of opts.initialEntries || []) add(e);
+    return readPages(opts, opts.pageCount, (list, page) => {
+      list.forEach(add);
+      if (opts.onPage) opts.onPage({ page, entries: acc });
       return false;
     }, (o, why) => {
-      if (o.expectedTotal !== null && o.expectedTotal !== undefined && byId.size !== o.expectedTotal) {
+      if (o.expectedTotal !== null && o.expectedTotal !== undefined && acc.length !== o.expectedTotal) {
         throw new IncompleteLoadError({ reason: 'mismatch' });
       }
       o.log('load:stop', { reason: why });
-      return { entries: [...byId.values()] };
+      return { entries: [...acc] };
     });
   }
 
@@ -109,7 +127,7 @@
     const { knownIds, maxPages = 20 } = opts;
     const entries = [];
     let sawKnown = false;
-    return readPages({ ...opts, pageCount: null }, maxPages, (list) => {
+    return readPages({ ...opts, pageCount: null, startPage: 0 }, maxPages, (list) => {
       for (const e of list) {
         if (knownIds.has(e.id)) sawKnown = true;
         else entries.push(e);

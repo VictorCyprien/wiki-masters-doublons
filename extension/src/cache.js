@@ -8,6 +8,9 @@
       async set(key, value) {
         map.set(key, structuredClone(value));
       },
+      async delete(key) {
+        map.delete(key);
+      },
     };
   }
 
@@ -39,6 +42,7 @@
     return {
       get: (key) => run('readonly', (s) => s.get(key)),
       set: async (key, value) => { await run('readwrite', (s) => s.put(value, key)); },
+      delete: async (key) => { await run('readwrite', (s) => s.delete(key)); },
     };
   }
 
@@ -55,6 +59,12 @@
         return v === undefined ? null : v;
       },
       setLastUserId: (userId) => store.set('lastUserId', userId),
+      async getPartial(userId) {
+        const v = await store.get(`partial:${userId}`);
+        return v === undefined ? null : v;
+      },
+      putPartial: (userId, partial) => store.set(`partial:${userId}`, partial),
+      clearPartial: (userId) => store.delete(`partial:${userId}`),
     };
   }
 

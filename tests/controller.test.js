@@ -536,3 +536,134 @@ test('refresh sans enregistrement, fetchFreshness échoue : loading puis error f
   assert.equal(c.getState().mode, 'error');
   assert.equal(c.getState().error, 'freshness');
 });
+
+// --- Task 10 : essais espacés, reprise de la lecture complète ---
+const objs = (from, to) => Array.from({ length: to - from }, (_, i) => ({ id: `r${from + i}` }));
+
+test('échec à la page d\'indice 96 : putPartial, error, resumeAt ; refresh reprend et finit', async () => {
+  const read = objs(0, 96 * 50);
+  const all = objs(0, 13522);
+  let mode = 'fail';
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      calls.loadAll.push(o);
+      if (mode === 'fail') {
+        o.onPage({ page: 95, entries: read });
+        throw new IncompleteLoadError({ reason: 'http', page: 96, status: 503 });
+      }
+      return { entries: all };
+    },
+  });
+  await c.enter();
+  const p = await cache.getPartial('u1');
+  assert.equal(p.nextPage, 96);
+  assert.equal(p.entries.length, 96 * 50);
+  assert.equal(p.pageCount, 271);
+  assert.equal(p.savedAt, 4242);
+  assert.equal(c.getState().mode, 'error');
+  assert.deepEqual(c.getState().resumeAt, { page: 97, pageCount: 271 });
+  mode = 'ok';
+  await c.refresh();
+  const last = calls.loadAll.at(-1);
+  assert.equal(last.startPage, 96);
+  assert.equal(last.initialEntries.length, 96 * 50);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().resumeAt, null);
+  assert.equal(await cache.getPartial('u1'), null);
+  assert.equal((await cache.get('u1')).entries.length, 13522);
+});
+
+test('reprise de plus de 24 h : ignorée, départ à 0', async () => {
+  const { c, cache, calls } = setup();
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 1, savedAt: 4242 - 24 * 3600 * 1000 - 1 });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.deepEqual(calls.loadAll[0].initialEntries, []);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('reprise de 24 h pile : acceptée ; enter() sans enregistrement reprend automatiquement', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: 500 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242 - 24 * 3600 * 1000 });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 3);
+  assert.equal(calls.loadAll[0].initialEntries.length, 150);
+});
+
+test('reprise inutilisable (nextPage >= pageCount) : ignorée et effacée', async () => {
+  const { c, cache, calls } = setup();
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 1, savedAt: 4242 });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('onPage : putPartial toutes les 10 pages seulement', async () => {
+  const saved = [];
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      for (let page = 0; page < 25; page += 1) {
+        o.onPage({ page, entries: objs(0, (page + 1) * 2) });
+        await tick();
+        const p = await cache.getPartial('u1');
+        if (p && (!saved.length || saved.at(-1).nextPage !== p.nextPage)) saved.push(p);
+      }
+      throw new AbortedLoadError();
+    },
+  });
+  await c.enter();
+  assert.deepEqual(saved.map((p) => [p.nextPage, p.entries.length]), [[10, 20], [20, 40]]);
+  assert.equal(c.getState().mode, 'off');
+  assert.equal((await cache.getPartial('u1')).nextPage, 20); // pas de sauvegarde supplémentaire à l'abandon
+});
+
+test('mismatch final : clearPartial, pas de resumeAt', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async () => ({ entries: objs(0, 5) }),
+  });
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 271, savedAt: 4242 });
+  await c.enter();
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(c.getState().resumeAt, null);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('exit pendant l\'échec : aucune écriture après la nouvelle génération', async () => {
+  const gate = deferred();
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      await gate.promise;
+      o.onPage({ page: 9, entries: objs(0, 500) });
+      throw new IncompleteLoadError({ reason: 'http', page: 10, status: 503 });
+    },
+  });
+  const p = c.enter();
+  await tick();
+  c.exit();
+  gate.resolve();
+  await p;
+  await tick();
+  assert.equal(await cache.getPartial('u1'), null);
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(c.getState().resumeAt, null);
+});
+
+test('attente d\'essai : progress.retryInMs renseigné puis remis à null', async () => {
+  const { c, states } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      o.onRetry({ page: 0, attempt: 1, waitMs: 5000 });
+      o.onProgress({ pagesRead: 1, pageCount: 271 });
+      throw new AbortedLoadError();
+    },
+  });
+  await c.enter();
+  const waiting = states.find((s) => s.progress?.retryInMs === 5000);
+  assert.ok(waiting);
+  assert.equal(waiting.progress.phase, 'full');
+  assert.equal(states.filter((s) => s.progress).at(-1).progress.retryInMs, null);
+});

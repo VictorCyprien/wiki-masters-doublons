@@ -81,27 +81,111 @@ test('429 avec Retry-After puis 200 : une nouvelle tentative', async () => {
   assert.deepEqual(e.calls, [0, 0]);
 });
 
-test('429 deux fois sur la même page : arrêt', async () => {
-  const e = env(() => status(429, { 'Retry-After': '1' }));
-  await rejectsWith(loadAllPages({ ...e, pageCount: 2, expectedTotal: null }), { name: 'IncompleteLoadError', status: 429, page: 0 });
-  assert.deepEqual(e.calls, [0, 0]);
-});
-
-test('503 sans Retry-After : un seul appel', async () => {
-  const e = env([ok(range(0, 50)), status(503)]);
-  await rejectsWith(loadAllPages({ ...e, pageCount: 3, expectedTotal: null }), { status: 503, page: 1, reason: 'http' });
-  assert.deepEqual(e.calls, [0, 1]);
-});
-
 test('Retry-After trop long : retry-after, aucun sleep de 120 s', async () => {
   const e = env([status(429, { 'Retry-After': '120' })]);
   await rejectsWith(loadAllPages({ ...e, pageCount: 1, expectedTotal: null }), { reason: 'retry-after', status: 429 });
   assert.ok(!e.sleeps.includes(120000));
 });
 
-test('401 : http ; exception de fetchPage : network', async () => {
-  await rejectsWith(loadAllPages({ ...env([status(401)]), pageCount: 1, expectedTotal: null }), { reason: 'http', status: 401 });
-  await rejectsWith(loadAllPages({ ...env([new TypeError('boom')]), pageCount: 1, expectedTotal: null }), { reason: 'network', status: null, page: 0 });
+test('401 : arrêt immédiat sans attente ; exception de fetchPage persistante : network après 3 essais', async () => {
+  const e1 = env([status(401)]);
+  await rejectsWith(loadAllPages({ ...e1, pageCount: 1, expectedTotal: null }), { reason: 'http', status: 401 });
+  assert.deepEqual(e1.sleeps, []);
+  const e2 = env(() => new TypeError('boom'));
+  await rejectsWith(loadAllPages({ ...e2, pageCount: 1, expectedTotal: null }), { reason: 'network', status: null, page: 0 });
+  assert.deepEqual(e2.sleeps, [5000, 15000, 45000]);
+});
+
+test('503 sans Retry-After puis 200 : une attente de 5000, succès', async () => {
+  const e = env((page, calls) => (calls.length === 1 ? status(503) : ok(range(0, 3))));
+  const r = await loadAllPages({ ...e, pageCount: 1, expectedTotal: 3 });
+  assert.equal(r.entries.length, 3);
+  assert.deepEqual(e.sleeps, [5000]);
+  assert.deepEqual(e.calls, [0, 0]);
+});
+
+test('503 quatre fois : attentes 5, 15, 45 s puis IncompleteLoadError 503', async () => {
+  const e = env(() => status(503));
+  await rejectsWith(loadAllPages({ ...e, pageCount: 2, expectedTotal: null }), { name: 'IncompleteLoadError', reason: 'http', status: 503, page: 0 });
+  assert.deepEqual(e.sleeps, [5000, 15000, 45000]);
+  assert.equal(e.calls.length, 4);
+});
+
+test('rejet réseau puis 200 : une attente de 5000, succès', async () => {
+  const e = env((page, calls) => (calls.length === 1 ? new TypeError('reset') : ok(range(0, 2))));
+  const r = await loadAllPages({ ...e, pageCount: 1, expectedTotal: 2 });
+  assert.equal(r.entries.length, 2);
+  assert.deepEqual(e.sleeps, [5000]);
+});
+
+test('corps illisible : nouvel essai', async () => {
+  const e = env((page, calls) => (calls.length === 1 ? new Response('pas du json', { status: 200 }) : ok(range(0, 2))));
+  const r = await loadAllPages({ ...e, pageCount: 1, expectedTotal: 2 });
+  assert.equal(r.entries.length, 2);
+  assert.deepEqual(e.sleeps, [5000]);
+});
+
+test('Retry-After: 2 puis 200 : attente 2000 ; loadNewEntries suit la même politique', async () => {
+  const e = env((page, calls) => (calls.length === 1 ? status(503, { 'Retry-After': '2' }) : ok(range(0, 2))));
+  await loadAllPages({ ...e, pageCount: 1, expectedTotal: null });
+  assert.deepEqual(e.sleeps, [2000]);
+  const e2 = env((page, calls) => (calls.length === 1 ? status(502) : ok([{ id: 'known' }])));
+  const r = await loadNewEntries({ ...e2, knownIds: new Set(['known']) });
+  assert.deepEqual(r.entries, []);
+  assert.deepEqual(e2.sleeps, [5000]);
+});
+
+test('Retry-After: 120 : arrêt sans attente', async () => {
+  const e = env([status(503, { 'Retry-After': '120' })]);
+  await rejectsWith(loadAllPages({ ...e, pageCount: 1, expectedTotal: null }), { reason: 'retry-after', status: 503 });
+  assert.deepEqual(e.sleeps, []);
+  assert.deepEqual(e.calls, [0]);
+});
+
+test('abandon pendant l’attente de 15 s : AbortedLoadError, aucun nouvel appel', async () => {
+  const e = env(() => status(503));
+  e.sleep = async (ms) => { e.sleeps.push(ms); if (ms === 15000) { e.controller.abort(); throw new Error('abandonné'); } };
+  await rejectsWith(loadAllPages({ ...e, pageCount: 1, expectedTotal: null }), { name: 'AbortedLoadError' });
+  assert.deepEqual(e.sleeps, [5000, 15000]);
+  assert.equal(e.calls.length, 2);
+});
+
+test('onRetry reçoit { page, attempt, waitMs } avant chaque attente', async () => {
+  const retries = [];
+  const e = env(() => status(503), { onRetry: (r) => retries.push(r) });
+  await assert.rejects(loadAllPages({ ...e, pageCount: 1, expectedTotal: null }));
+  assert.deepEqual(retries, [
+    { page: 0, attempt: 1, waitMs: 5000 }, { page: 0, attempt: 2, waitMs: 15000 }, { page: 0, attempt: 3, waitMs: 45000 },
+  ]);
+});
+
+test('backoffMs est une option', async () => {
+  const e = env(() => status(503), { backoffMs: [500, 600, 700] });
+  await assert.rejects(loadAllPages({ ...e, pageCount: 1, expectedTotal: null }));
+  assert.deepEqual(e.sleeps, [500, 600, 700]);
+});
+
+test('startPage + initialEntries : reprise, un seul appel, progression depuis la page 0', async () => {
+  const progress = [];
+  const e = env([null, null, ok(range(100, 150))], { onProgress: (p) => progress.push(p) });
+  const r = await loadAllPages({ ...e, pageCount: 3, expectedTotal: 150, startPage: 2, initialEntries: range(0, 100) });
+  assert.deepEqual(e.calls, [2]);
+  assert.equal(r.entries.length, 150);
+  assert.deepEqual(progress.at(-1), { pagesRead: 3, pageCount: 3 });
+  assert.deepEqual(e.sleeps, []);
+});
+
+test('initialEntries dédoublonnées avec les nouvelles par id', async () => {
+  const e = env([null, ok(range(45, 60))]);
+  const r = await loadAllPages({ ...e, pageCount: 2, expectedTotal: null, startPage: 1, initialEntries: range(0, 50) });
+  assert.equal(r.entries.length, 60);
+});
+
+test('onPage appelé après chaque page avec le cumul', async () => {
+  const seen = [];
+  const e = env([ok(range(0, 50)), ok(range(50, 70))]);
+  await loadAllPages({ ...e, pageCount: 2, expectedTotal: null, onPage: ({ page, entries }) => seen.push([page, entries.length]) });
+  assert.deepEqual(seen, [[0, 50], [1, 70]]);
 });
 
 test('parseRetryAfter', () => {

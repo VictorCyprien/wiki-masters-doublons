@@ -11,7 +11,7 @@
 
     let state = {
       mode: 'off', progress: null, loadedAt: null, stale: false, freshnessUnknown: false,
-      error: null, summary: null, pageCounts: null,
+      error: null, summary: null, pageCounts: null, resumeAt: null,
     };
     let gen = 0;
     let record = null; // enregistrement servi (CacheRecord)
@@ -71,31 +71,112 @@
     }
 
     function setReady({ stale = false, freshnessUnknown = false, error = null } = {}) {
-      setState({ mode: 'ready', progress: null, loadedAt: record.loadedAt ?? null, stale, freshnessUnknown, error });
+      setState({ mode: 'ready', progress: null, loadedAt: record.loadedAt ?? null, stale, freshnessUnknown, error, resumeAt: null });
     }
 
     function progressFn(mine, phase) {
       return (p) => {
         if (gen !== mine) return;
-        setState({ progress: { phase, pagesRead: p.pagesRead, pageCount: p.pageCount ?? null } });
+        setState({ progress: { phase, pagesRead: p.pagesRead, pageCount: p.pageCount ?? null, retryInMs: null } });
       };
+    }
+
+    // Attente avant un nouvel essai : « le serveur ne répond pas, nouvel essai dans … ».
+    function retryFn(mine, phase) {
+      return ({ waitMs }) => {
+        if (gen !== mine) return;
+        const p = state.progress;
+        setState({ progress: { phase: p?.phase ?? phase, pagesRead: p?.pagesRead ?? 0, pageCount: p?.pageCount ?? null, retryInMs: waitMs } });
+      };
+    }
+
+    const DAY_MS = 24 * 3600 * 1000;
+
+    // Lecture reprise d'un enregistrement partiel valide (moins de 24 h, page encore à lire), sinon null.
+    async function loadPartial(mine, uid, pageCount) {
+      if (uid == null) return null;
+      let partial = null;
+      try {
+        partial = await step(mine, cache.getPartial(uid));
+      } catch (err) {
+        if (err === STALE) throw err;
+      }
+      if (!partial) return null;
+      const valid = Array.isArray(partial.entries) && Number.isInteger(partial.nextPage) && partial.nextPage >= 0
+        && partial.nextPage < pageCount && now() - partial.savedAt <= DAY_MS;
+      if (valid) return partial;
+      await dropPartial(mine, uid);
+      return null;
+    }
+
+    async function dropPartial(mine, uid) {
+      if (uid == null) return;
+      try {
+        await step(mine, cache.clearPartial(uid));
+      } catch (err) {
+        if (err === STALE) throw err;
+      }
     }
 
     // Lecture complète puis vérification : cartes gagnées pendant la lecture, total frais.
     async function fullRead(mine, f) {
       const pageCount = Math.ceil(f.total / site.PAGE_SIZE);
-      setState({ mode: 'loading', error: null, progress: { phase: 'full', pagesRead: 0, pageCount } });
+      const uid0 = f.userId ?? null;
+      const partial = await loadPartial(mine, uid0, pageCount);
+      const startPage = partial ? partial.nextPage : 0;
+      const initialEntries = partial ? partial.entries : [];
+      setState({ mode: 'loading', error: null, resumeAt: null, progress: { phase: 'full', pagesRead: startPage, pageCount, retryInMs: null } });
       const signal = ctrl.signal;
       const onProgress = progressFn(mine, 'full');
-      const { entries } = await step(mine, deps.loadAll({ pageCount, expectedTotal: null, onProgress, signal }));
-      const extra = await step(mine, deps.loadNew({ knownIds: new Set(entries.map((e) => e.id)), onProgress: () => {}, signal }));
+      let latest = initialEntries; // entrées lues jusqu'ici (référence du chargeur)
+      let writes = Promise.resolve(); // sauvegardes en file : une à la fois, et avant tout effacement
+      const save = (entries, nextPage) => {
+        const snapshot = { entries: entries.slice(), nextPage, pageCount, savedAt: now() };
+        writes = writes.then(() => {
+          if (gen !== mine) return undefined;
+          return cache.putPartial(uid0, snapshot);
+        }).catch(() => {});
+      };
+      const onPage = ({ page, entries }) => {
+        if (gen !== mine) return;
+        latest = entries;
+        if (uid0 !== null && (page + 1) % 10 === 0) save(entries, page + 1);
+      };
+      let entries;
+      try {
+        ({ entries } = await step(mine, deps.loadAll({
+          pageCount, expectedTotal: null, startPage, initialEntries, onPage, onProgress, onRetry: retryFn(mine, 'full'), signal,
+        })));
+      } catch (err) {
+        if (err?.name === 'IncompleteLoadError' && Number.isInteger(err.page) && err.reason !== 'mismatch' && uid0 !== null) {
+          guard(mine);
+          save(latest, err.page);
+          await step(mine, writes);
+          guard(mine);
+          setState({ resumeAt: { page: err.page + 1, pageCount } });
+        }
+        throw err;
+      }
+      const clearRetry = progressFn(mine, 'full');
+      const extra = await step(mine, deps.loadNew({
+        knownIds: new Set(entries.map((e) => e.id)),
+        onProgress: (p) => clearRetry({ pagesRead: state.progress?.pagesRead ?? p.pagesRead, pageCount }),
+        onRetry: retryFn(mine, 'full'),
+        signal,
+      }));
       const merged = [...extra.entries, ...entries];
       const f2 = await strictFresh(mine);
       const sameUser = f.userId == null || f2.userId == null || f.userId === f2.userId;
-      if (!sameUser || merged.length !== f2.total) throw mkError('mismatch');
+      if (!sameUser || merged.length !== f2.total) {
+        await step(mine, writes);
+        await dropPartial(mine, uid0);
+        throw mkError('mismatch');
+      }
       const rec = { entries: merged, total: f2.total, freshness: f2.freshness, template: f2.template, loadedAt: now() };
       const uid = f2.userId ?? null;
       if (uid !== null) await step(mine, cache.put(uid, rec));
+      await step(mine, writes);
+      await dropPartial(mine, uid0);
       guard(mine);
       adopt(rec, uid);
       log('load:done', { entries: merged.length });
@@ -159,13 +240,14 @@
         await fullRead(mine, f0);
         return;
       }
-      setState({ mode: 'loading', error: null, progress: { phase: 'incremental', pagesRead: 0, pageCount: null } });
+      setState({ mode: 'loading', error: null, progress: { phase: 'incremental', pagesRead: 0, pageCount: null, retryInMs: null } });
       const known = record.entries;
       let extra;
       try {
         extra = await step(mine, deps.loadNew({
           knownIds: new Set(known.map((e) => e.id)),
           onProgress: progressFn(mine, 'incremental'),
+          onRetry: retryFn(mine, 'incremental'),
           signal: ctrl.signal,
         }));
       } catch (err) {
@@ -259,7 +341,7 @@
       memo = { record: null, groups: null };
       setState({
         mode: 'off', progress: null, loadedAt: null, stale: false, freshnessUnknown: false,
-        error: null, summary: null, pageCounts: null,
+        error: null, summary: null, pageCounts: null, resumeAt: null,
       });
     }
 

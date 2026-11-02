@@ -262,7 +262,11 @@
     }
     const err = state.error;
     if (err) {
-      if (state.mode === 'error') rows.push({ text: err === 'freshness' ? LABELS.freshness : err === 'incomplete' ? LABELS.incompleteNone : LABELS.unexpected });
+      const ra = state.resumeAt;
+      if (state.mode === 'error' && err === 'incomplete' && ra && typeof f.formatInterrupted === 'function') {
+        rows.push({ text: f.formatInterrupted(ra), refresh: true, label: LABELS.resume });
+        refreshPlaced = true;
+      } else if (state.mode === 'error') rows.push({ text: err === 'freshness' ? LABELS.freshness : err === 'incomplete' ? LABELS.incompleteNone : LABELS.unexpected });
       else rows.push({ text: err === 'incomplete' ? LABELS.incompleteKept : LABELS.unexpected });
     }
     if (state.mode === 'ready' && state.stale) rows.push({ text: LABELS.stale });
@@ -291,7 +295,7 @@
           if (r.text) row.appendChild(el(doc, 'span', r.text));
           if (r.refresh) {
             if (r.text) row.appendChild(el(doc, 'span', ' · '));
-            const b = el(doc, 'button', f.LABELS.refresh, { type: 'button' });
+            const b = el(doc, 'button', r.label || f.LABELS.refresh, { type: 'button' });
             b.style.cssText = 'cursor:pointer;text-decoration:underline;background:none;border:0;color:inherit;font:inherit;';
             b.addEventListener('click', (e) => {
               e.preventDefault();
