@@ -238,3 +238,59 @@ test('createSerialFetch : le signal de l’appelant annule l’appel', async () 
   await assert.rejects(f('/x', { signal: c.signal }));
   assert.equal(st.log.length, 0);
 });
+
+test('createSerialFetch : le corps reste lisible après le retour de l’appel', async () => {
+  const st = serialEnv();
+  const fetchFn = async (url, init) => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('corps'));
+        init.signal.addEventListener('abort', () => { try { controller.error(new Error('aborted')); } catch {} }, { once: true });
+      },
+      pull() { return new Promise(() => {}); },
+    });
+    return new Response(body);
+  };
+  const f = createSerialFetch({ fetchFn, sleep: st.sleep, now: st.now });
+  const res = await f('/x');
+  await new Promise((r) => setImmediate(r));
+  const reader = res.body.getReader();
+  const { value } = await reader.read();
+  assert.equal(new TextDecoder().decode(value), 'corps');
+});
+
+test('createSerialFetch : fetchFn qui ignore le signal → TimeoutError, et l’appel suivant s’exécute', async () => {
+  const st = serialEnv({ timeoutPending: false });
+  let n = 0;
+  const fetchFn = () => (++n === 1 ? new Promise(() => {}) : Promise.resolve(new Response('ok')));
+  const f = createSerialFetch({ fetchFn, sleep: st.sleep, now: st.now });
+  await assert.rejects(f('/hang'), (err) => err.name === 'TimeoutError');
+  const res = await f('/next');
+  assert.equal(await res.text(), 'ok');
+});
+
+test('createSerialFetch : abandon d’un appel en file → rejet immédiat, la chaîne reste intacte', async () => {
+  const st = serialEnv();
+  let release;
+  const started = [];
+  const fetchFn = (url) => {
+    started.push(url);
+    if (url === '/A') return new Promise((resolve) => { release = () => resolve(new Response('a')); });
+    return Promise.resolve(new Response(url));
+  };
+  const f = createSerialFetch({ fetchFn, sleep: st.sleep, now: st.now });
+  const a = f('/A');
+  const c = new AbortController();
+  const b = f('/B', { signal: c.signal });
+  await new Promise((r) => setImmediate(r));
+  c.abort();
+  await assert.rejects(b, (err) => err.name === 'AbortError');
+  assert.deepEqual(started, ['/A']);
+  const cc = f('/C');
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(started, ['/A']); // C attend toujours A
+  release();
+  await a;
+  assert.equal(await (await cc).text(), '/C');
+  assert.deepEqual(started, ['/A', '/C']);
+});

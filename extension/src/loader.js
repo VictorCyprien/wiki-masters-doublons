@@ -128,40 +128,50 @@
   function createSerialFetch({ fetchFn, minGapMs = 400, timeoutMs = 20000, sleep, now }) {
     let tail = Promise.resolve();
     let lastEnd = null;
+    const abortError = () => Object.assign(new Error('Appel abandonné'), { name: 'AbortError' });
 
-    async function run(url, init = {}) {
-      const caller = init.signal;
-      const abortError = () => Object.assign(new Error('Appel abandonné'), { name: 'AbortError' });
+    // Rejette dès que `signal` est déclenché, sans annuler `promise`.
+    function raceAbort(promise, signal) {
+      if (!signal) return promise;
+      return new Promise((resolve, reject) => {
+        const onAbort = () => reject(abortError());
+        if (signal.aborted) return onAbort();
+        signal.addEventListener('abort', onAbort, { once: true });
+        promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+      });
+    }
+
+    async function run(url, init) {
+      const caller = init?.signal;
       if (caller?.aborted) throw abortError();
       if (lastEnd !== null) {
         const wait = minGapMs - (now() - lastEnd);
-        if (wait > 0) await sleep(wait, caller);
-        if (caller?.aborted) throw abortError();
+        if (wait > 0) await raceAbort(sleep(wait, caller), caller);
       }
-      const ctrl = new AbortController();
-      const onAbort = () => ctrl.abort();
+      const fetchCtrl = new AbortController(); // abandonné seulement sur délai dépassé ou abandon de l'appelant
+      const onAbort = () => fetchCtrl.abort();
       caller?.addEventListener('abort', onAbort, { once: true });
-      let timedOut = false;
-      const timer = sleep(timeoutMs, ctrl.signal).then(() => {
-        timedOut = true;
-        ctrl.abort();
-        return new Promise(() => {}); // le rejet viendra de fetchFn
-      }, () => new Promise(() => {}));
+      const timerCtrl = new AbortController(); // sert uniquement à annuler le minuteur
+      const timeout = new Promise((_, reject) => {
+        sleep(timeoutMs, timerCtrl.signal).then(() => {
+          reject(Object.assign(new Error(`Délai dépassé (${timeoutMs} ms)`), { name: 'TimeoutError' }));
+          fetchCtrl.abort();
+        }, () => {});
+      });
       try {
-        return await Promise.race([fetchFn(url, { ...init, signal: ctrl.signal }), timer]);
-      } catch (err) {
-        if (timedOut) throw Object.assign(new Error(`Délai dépassé (${timeoutMs} ms)`), { name: 'TimeoutError' });
-        throw err;
+        return await raceAbort(Promise.race([fetchFn(url, { ...init, signal: fetchCtrl.signal }), timeout]), caller);
       } finally {
         caller?.removeEventListener('abort', onAbort);
-        if (!timedOut) ctrl.abort(); // annule le minuteur en attente
+        timerCtrl.abort();
         lastEnd = now();
       }
     }
 
     return (url, init) => {
-      const p = tail.then(() => run(url, init));
-      tail = p.catch(() => {});
+      const prev = tail;
+      const p = raceAbort(prev, init?.signal).then(() => run(url, init));
+      // La chaîne attend aussi la fin réelle de l'appel précédent, même si celui-ci est abandonné en file.
+      tail = Promise.all([prev, p.catch(() => {})]);
       return p;
     };
   }
