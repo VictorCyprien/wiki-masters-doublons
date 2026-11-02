@@ -79,7 +79,7 @@
       }
       // hors interception : un échec synchrone de l'original n'est pas rejoué
       if (!intercepting) return passthrough();
-      return Promise.resolve(out).then(serve, fallback);
+      return Promise.resolve(out).then(serve).catch(fallback);
     }
 
     target.fetch = replacement;

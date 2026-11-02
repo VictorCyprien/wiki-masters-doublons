@@ -148,3 +148,13 @@ test('isWatched faux : onSettled jamais appelé', async () => {
   await target.fetch('/a');
   assert.equal(n, 0);
 });
+
+test('respond asynchrone renvoie un objet non sérialisable : retombée sur l\'original, une seule fois', async () => {
+  const { target, marker, calls } = makeTarget();
+  installInterceptor({
+    target, shouldIntercept: () => true,
+    respond: async () => { const o = {}; o.o = o; return o; },
+  });
+  assert.equal(await target.fetch('/x'), marker);
+  assert.equal(calls.length, 1);
+});
