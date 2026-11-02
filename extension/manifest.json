@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Doublons pour Wiki Masters (non officiel)",
+  "version": "0.1.0",
+  "description": "Ajoute un mode Doublons au tri de la collection Wiki Masters.",
+  "content_scripts": [
+    {
+      "matches": ["https://www.wiki-masters.com/*"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "js": [
+        "src/site-api.js",
+        "src/duplicates.js",
+        "src/loader.js",
+        "src/cache.js",
+        "src/interceptor.js",
+        "src/controller.js",
+        "src/format.js",
+        "src/log.js",
+        "src/dom.js",
+        "src/main.js"
+      ]
+    }
+  ]
+}
