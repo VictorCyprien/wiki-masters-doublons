@@ -66,7 +66,7 @@ Un premier chargement lent (une minute ou plus pour une grosse collection) est *
     "count": 1,
     "card_id": "efef6932-…",
     "starred": false,
-    "user_id": "user-A-…",
+    "user_id": "user-A",
     "is_shiny": false,
     "obtained_at": "2026-10-27T17:56:32.52341+00:00"
   }
