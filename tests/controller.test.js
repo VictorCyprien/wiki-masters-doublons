@@ -1,0 +1,446 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const siteApi = require('../extension/src/site-api.js');
+const dupApi = require('../extension/src/duplicates.js');
+const { IncompleteLoadError, AbortedLoadError } = require('../extension/src/loader.js');
+const { memoryStore, createCache } = require('../extension/src/cache.js');
+const { makeEntry } = require('./helpers.js');
+const { createController } = require('../extension/src/controller.js');
+
+const LIST = '/api/my-collection?sort=rarity&page=0&stats=0';
+const tick = () => new Promise((r) => setImmediate(r));
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+const fresh = (o = {}) => ({ userId: 'u1', total: 5, freshness: 'F1', template: { collection: [], tagOptions: [] }, ...o });
+const rec = (entries, o = {}) => ({ entries, total: entries.length, freshness: 'F1', template: { collection: [], tagOptions: [] }, loadedAt: 1, ...o });
+
+function setup(over = {}) {
+  const cache = createCache(memoryStore());
+  const states = [];
+  const calls = { fresh: 0, loadAll: [], loadNew: [] };
+  const d = {
+    fetchFreshness: async () => { calls.fresh += 1; return fresh(); },
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: [] }; },
+    loadNew: async (o) => { calls.loadNew.push(o); return { entries: [] }; },
+    cache,
+    site: { classifyUrl: siteApi.classifyUrl, parseSiteQuery: siteApi.parseSiteQuery, buildListResponse: siteApi.buildListResponse,
+      buildStatsResponse: siteApi.buildStatsResponse, PAGE_SIZE: siteApi.SITE.PAGE_SIZE },
+    dup: { groupDuplicates: dupApi.groupDuplicates, filterGroups: dupApi.filterGroups, summarize: dupApi.summarize, rarityCounts: dupApi.rarityCounts },
+    now: () => 4242,
+    onState: (s) => states.push(s),
+    ...over,
+  };
+  return { c: createController(d), cache, states, calls, d };
+}
+const ents = (n, p = 'x') => Array.from({ length: n }, (_, i) => makeEntry({ id: `${p}${i}`, title: `${p}${i}` }));
+
+test('pas de cache : lecture complète, loading puis ready, cache rempli', async () => {
+  const entries = ents(5);
+  const { c, cache, states, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: entries.slice(0, 4) }; },
+    loadNew: async () => ({ entries: [entries[4]] }),
+  });
+  // total frais final 13522 != 5 -> mismatch ; vérifions d'abord les appels
+  await c.enter();
+  assert.equal(calls.loadAll.length, 1);
+  assert.equal(calls.loadAll[0].pageCount, 271);
+  assert.equal(calls.loadAll[0].expectedTotal, null);
+  assert.ok(states.some((s) => s.mode === 'loading' && s.progress?.phase === 'full'));
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('u1'), null);
+});
+
+test('pas de cache : cache rempli avec freshness, template, loadedAt', async () => {
+  const entries = ents(5);
+  const { c, cache, states } = setup({
+    loadAll: async () => ({ entries }),
+  });
+  await c.enter();
+  const r = await cache.get('u1');
+  assert.equal(r.entries.length, 5);
+  assert.equal(r.freshness, 'F1');
+  assert.deepEqual(r.template, { collection: [], tagOptions: [] });
+  assert.equal(r.loadedAt, 4242);
+  assert.equal(await cache.getLastUserId(), 'u1');
+  assert.equal(states.at(-1).mode, 'ready');
+  assert.equal(states.at(-1).stale, false);
+});
+
+test('lecture complète : loadAll 3, loadNew 1, total frais 4 -> ready avec 4 entrées', async () => {
+  const e = ents(4);
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 4 }),
+    loadAll: async () => ({ entries: e.slice(0, 3) }),
+    loadNew: async (o) => { calls.loadNew.push(o); return { entries: [e[3]] }; },
+  });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('u1')).entries.length, 4);
+  assert.equal(calls.loadNew[0].knownIds.size, 3);
+});
+
+test('cache, même fraîcheur : aucune lecture, stale false', async () => {
+  const { c, cache, calls } = setup();
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  assert.equal(calls.loadAll.length + calls.loadNew.length, 0);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().stale, false);
+});
+
+test('cache, autre fraîcheur : stale true, aucune lecture', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ freshness: 'F2' }) });
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  assert.equal(calls.loadAll.length + calls.loadNew.length, 0);
+  assert.equal(c.getState().stale, true);
+  assert.equal(c.getState().mode, 'ready');
+});
+
+test('fetchFreshness rejette : cache de lastUserId, freshnessUnknown', async () => {
+  const { c, cache } = setup({ fetchFreshness: async () => { throw new Error('x'); } });
+  await cache.put('u1', rec(ents(3)));
+  await cache.setLastUserId('u1');
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().freshnessUnknown, true);
+});
+
+test('fetchFreshness total null : traité comme un échec', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: null }) });
+  await c.enter();
+  assert.equal(c.getState().error, 'freshness');
+  assert.equal(calls.loadAll.length, 0);
+  await cache.put('u1', rec(ents(3)));
+  await cache.setLastUserId('u1');
+  c.exit();
+  await c.enter();
+  assert.equal(c.getState().freshnessUnknown, true);
+});
+
+test('fetchFreshness rejette sans cache : error freshness, aucune lecture', async () => {
+  const { c, calls } = setup({ fetchFreshness: async () => { throw new Error('x'); } });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'freshness');
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(c.shouldIntercept(LIST), false);
+});
+
+test('setLastUserId après chaque fetchFreshness réussi', async () => {
+  const { c, cache } = setup({ fetchFreshness: async () => fresh({ userId: 'u7' }) });
+  await cache.put('u7', rec(ents(3)));
+  await c.enter();
+  assert.equal(await cache.getLastUserId(), 'u7');
+});
+
+test('userId null : pas de put ni setLastUserId', async () => {
+  const e = ents(5);
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ userId: null }),
+    loadAll: async () => ({ entries: e }),
+  });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(await cache.getLastUserId(), null);
+});
+
+test('refresh incrémental : 3 en cache + 2 nouvelles, total 5', async () => {
+  const old = ents(3, 'o');
+  const nw = ents(2, 'n');
+  const { c, cache, calls } = setup({ loadNew: async (o) => { calls.loadNew.push(o); return { entries: nw }; } });
+  await cache.put('u1', rec(old, { freshness: 'F0' }));
+  await c.enter();
+  assert.equal(c.getState().stale, true);
+  await c.refresh();
+  const r = await cache.get('u1');
+  assert.equal(r.entries.length, 5);
+  assert.equal(r.freshness, 'F1');
+  assert.equal(r.loadedAt, 4242);
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(c.getState().stale, false);
+  assert.equal(c.getState().mode, 'ready');
+});
+
+test('refresh avec carte partie : lecture complète avec le total frais', async () => {
+  const old = ents(3, 'o');
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 2 }),
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: old.slice(0, 2) }; },
+  });
+  await cache.put('u1', rec(old));
+  await c.enter();
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 1);
+  assert.equal(calls.loadAll[0].pageCount, 1);
+  assert.equal((await cache.get('u1')).entries.length, 2);
+});
+
+test('refresh : too-many-new -> lecture complète', async () => {
+  const old = ents(3, 'o');
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 3 }),
+    loadNew: async (o) => {
+      calls.loadNew.push(o);
+      if (calls.loadNew.length === 1) throw new IncompleteLoadError({ reason: 'too-many-new' });
+      return { entries: [] };
+    },
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: old }; },
+  });
+  await cache.put('u1', rec(old));
+  await c.enter();
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 1);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().error, null);
+});
+
+test('refresh : autre compte -> lecture complète sans fusion', async () => {
+  const old = ents(3, 'o');
+  const mine = ents(2, 'm');
+  let user = 'u1';
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ userId: user, total: 2 }),
+    loadNew: async (o) => { calls.loadNew.push(o); return { entries: [] }; },
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: mine }; },
+  });
+  await cache.put('u1', rec(old, { total: 2 }));
+  await c.enter();
+  user = 'u2';
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 1);
+  const r2 = await cache.get('u2');
+  assert.deepEqual(r2.entries.map((e) => e.id), ['m0', 'm1']);
+  assert.equal((await cache.get('u1')).entries.length, 3);
+});
+
+test('refresh deux fois pendant une lecture : loadNew une fois', async () => {
+  const gate = deferred();
+  const { c, cache, calls } = setup({
+    loadNew: async (o) => { calls.loadNew.push(o); await gate.promise; return { entries: ents(2, 'n') }; },
+  });
+  await cache.put('u1', rec(ents(3), { freshness: 'F0' }));
+  await c.enter();
+  const a = c.refresh();
+  const b = c.refresh();
+  gate.resolve();
+  await Promise.all([a, b]);
+  assert.equal(calls.loadNew.length, 1);
+});
+
+test('refresh pendant le loadAll d\'enter : même promesse, loadAll une fois', async () => {
+  const gate = deferred();
+  const e = ents(5);
+  const { c, calls } = setup({
+    loadAll: async (o) => { calls.loadAll.push(o); await gate.promise; return { entries: e }; },
+  });
+  const p1 = c.enter();
+  await tick();
+  const p2 = c.refresh();
+  const p3 = c.enter();
+  assert.equal(p1, p2);
+  assert.equal(p1, p3);
+  gate.resolve();
+  await p1;
+  assert.equal(calls.loadAll.length, 1);
+});
+
+test('pendant refresh : interception gardée, ancien enregistrement servi', async () => {
+  const gate = deferred();
+  const old = [makeEntry({ id: 'a1', title: 'A' }), makeEntry({ id: 'a2', title: 'A' })];
+  const { c, cache } = setup({ loadNew: async () => { await gate.promise; return { entries: [] }; } });
+  await cache.put('u1', rec(old, { freshness: 'F0' }));
+  await c.enter();
+  const p = c.refresh();
+  await tick();
+  assert.equal(c.getState().mode, 'loading');
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), true);
+  assert.equal(c.respond(LIST).collection.length, 1);
+  gate.resolve();
+  await p;
+});
+
+test('première lecture : rien n\'est intercepté', async () => {
+  const gate = deferred();
+  const { c } = setup({ loadAll: async () => { await gate.promise; return { entries: [] }; } });
+  const p = c.enter();
+  await tick();
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), false);
+  gate.resolve();
+  await p;
+});
+
+test('shouldIntercept : classifyUrl nul -> faux', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), true);
+  assert.equal(c.shouldIntercept('/api/boosters'), false);
+});
+
+test('loadAll IncompleteLoadError avec ancien cache : ready, error incomplete, cache intact', async () => {
+  const old = ents(3, 'o');
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 2 }),
+    loadNew: async () => ({ entries: [] }),
+    loadAll: async () => { throw new IncompleteLoadError({ reason: 'mismatch' }); },
+  });
+  await cache.put('u1', rec(old));
+  await c.enter();
+  await c.refresh();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal((await cache.get('u1')).entries.length, 3);
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), true);
+});
+
+test('loadAll IncompleteLoadError sans cache : mode error, pas d\'interception', async () => {
+  const { c } = setup({ loadAll: async () => { throw new IncompleteLoadError({ reason: 'mismatch' }); } });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), false);
+});
+
+test('exception inattendue (cache) : error unexpected', async () => {
+  const { c, cache } = setup();
+  cache.get = async () => { throw new Error('idb'); };
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'unexpected');
+});
+
+test('AbortedLoadError sans exit : mode off sans erreur', async () => {
+  const { c } = setup({ loadAll: async () => { throw new AbortedLoadError(); } });
+  await c.enter();
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(c.getState().error, null);
+});
+
+test('exit pendant loading : signal aborted, off, pas d\'interception', async () => {
+  const gate = deferred();
+  let sig;
+  const { c } = setup({ loadAll: async (o) => { sig = o.signal; await gate.promise; throw new AbortedLoadError(); } });
+  const p = c.enter();
+  await tick();
+  c.exit();
+  assert.equal(sig.aborted, true);
+  gate.resolve();
+  await p;
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(c.shouldIntercept(LIST), false);
+});
+
+test('exit pendant fetchFreshness : reste off, loadAll jamais appelé', async () => {
+  const gate = deferred();
+  const { c, calls } = setup({ fetchFreshness: async () => { await gate.promise; return fresh(); } });
+  const p = c.enter();
+  await tick();
+  c.exit();
+  gate.resolve();
+  await p;
+  await tick();
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(calls.loadAll.length, 0);
+});
+
+test('exit puis enter pendant une lecture : l\'abandon tardif ne touche pas la seconde', async () => {
+  const g1 = deferred();
+  const g2 = deferred();
+  let n = 0;
+  const e = ents(5);
+  const { c } = setup({
+    loadAll: async () => {
+      n += 1;
+      if (n === 1) { await g1.promise; throw new AbortedLoadError(); }
+      await g2.promise;
+      return { entries: e };
+    },
+  });
+  const p1 = c.enter();
+  await tick();
+  c.exit();
+  const p2 = c.enter();
+  await tick();
+  assert.notEqual(p1, p2);
+  g1.resolve();
+  await p1;
+  assert.equal(c.getState().mode, 'loading');
+  g2.resolve();
+  await p2;
+  assert.equal(c.getState().mode, 'ready');
+});
+
+test('exit remet summary et pageCounts à null', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec([makeEntry({ title: 'A' }), makeEntry({ title: 'A' })]));
+  await c.enter();
+  c.respond(LIST);
+  assert.notEqual(c.getState().summary, null);
+  c.exit();
+  assert.equal(c.getState().summary, null);
+  assert.equal(c.getState().pageCounts, null);
+});
+
+function dupCollection() {
+  return [
+    makeEntry({ id: '1', title: 'Alpha', rarity: 'L', count: 3 }),
+    makeEntry({ id: '2', title: 'Beta', rarity: 'L' }),
+    makeEntry({ id: '3', title: 'Beta', rarity: 'L' }),
+    makeEntry({ id: '4', title: 'Gamma', rarity: 'C', count: 2 }),
+    makeEntry({ id: '5', title: 'Solo', rarity: 'L' }),
+  ];
+}
+
+test('respond liste : filtre L, une entrée par groupe, summary et pageCounts', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(dupCollection()));
+  await c.enter();
+  const body = c.respond('/api/my-collection?sort=rarity&rarity=L&page=0&stats=0');
+  assert.deepEqual(body.collection.map((e) => e.card.wikipedia_title), ['Alpha', 'Beta']);
+  assert.deepEqual(c.getState().summary, { cards: 2, extra: 3 });
+  assert.deepEqual(c.getState().pageCounts, [3, 2]);
+});
+
+test('respond stats : total = groupes L, rarityCounts ignore le filtre de rareté', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(dupCollection()));
+  await c.enter();
+  const s = c.respond('/api/my-collection/stats?sort=rarity&rarity=L');
+  assert.equal(s.total, 2);
+  assert.deepEqual(s.rarityCounts, { L: 2, C: 1 });
+});
+
+test('groupes mémoïsés par enregistrement', async () => {
+  let calls = 0;
+  const { c, cache, d } = setup();
+  const orig = d.dup.groupDuplicates;
+  d.dup.groupDuplicates = (e) => { calls += 1; return orig(e); };
+  await cache.put('u1', rec(dupCollection()));
+  await c.enter();
+  c.respond(LIST);
+  c.respond('/api/my-collection/stats?sort=rarity');
+  c.respond(LIST);
+  assert.equal(calls, 1);
+});
+
+test('template frais appliqué à l\'enregistrement en mémoire', async () => {
+  const { c, cache } = setup({ fetchFreshness: async () => fresh({ template: { collection: [], tagOptions: [{ id: 't' }], extra: 1 } }) });
+  await cache.put('u1', rec(dupCollection()));
+  await c.enter();
+  assert.equal(c.respond(LIST).extra, 1);
+});
+
+test('collection sans doublon : liste vide, summary 0, stats total 0', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec([makeEntry({ title: 'A' }), makeEntry({ title: 'B' })]));
+  await c.enter();
+  assert.deepEqual(c.respond(LIST).collection, []);
+  assert.deepEqual(c.getState().summary, { cards: 0, extra: 0 });
+  assert.equal(c.respond('/api/my-collection/stats?sort=rarity').total, 0);
+});
