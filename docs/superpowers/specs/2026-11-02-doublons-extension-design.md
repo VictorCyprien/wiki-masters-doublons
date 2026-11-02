@@ -138,7 +138,8 @@ Recherche, étiquettes et rareté s'appliquent sur le cache, avec les mêmes rè
 
 ### Erreurs
 
-- Sur 429 ou 5xx : le script respecte `Retry-After` s'il est présent, sinon il s'arrête. Il ne martèle jamais.
+- *(Révisé le 2026-11-02 par Victor, après une erreur serveur à la page 97 pendant la preuve.)* Sur 429, 5xx, coupure réseau ou délai dépassé : la même page est retentée au plus **3 fois**, après `Retry-After` s'il est présent et ≤ 60 s, sinon après 5 s, puis 15 s, puis 45 s ; `Retry-After` > 60 s ou un 4e échec arrêtent la lecture. Toujours une seule requête à la fois. Il ne martèle jamais.
+- **Reprise** (Victor, 2026-11-02) : les pages déjà lues d'une lecture complète sont gardées (aussi après rechargement de la page, 24 h au plus). Après un arrêt, la vue dit « Lecture interrompue à la page N / M » et « ↻ Reprendre » repart de la page en échec ; rouvrir le mode Doublons reprend aussi. La vérification finale du total reste : rien de partiel n'est affiché.
 - Une lecture incomplète (page en échec, total lu ≠ total annoncé par l'API) **n'est jamais affichée comme un résultat complet**. Le script le dit clairement et garde l'ancien cache s'il en existe un.
 - Toute exception du script est attrapée. Le site doit continuer à marcher comme sans le script.
 

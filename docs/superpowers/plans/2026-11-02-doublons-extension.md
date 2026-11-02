@@ -18,7 +18,7 @@
 - Réseau : uniquement des `GET` same-origin vers `/api/my-collection` et `/api/my-collection/stats`, toujours via le `fetch` d'origine (jamais via notre propre interception). Jamais deux appels de l'extension en parallèle. Au moins **400 ms** entre la fin d'un appel de l'extension et le début du suivant, quel qu'il soit (pages, fraîcheur). Délai maximal par appel : **20 s**.
 - Portée : interception et injection seulement quand `location.pathname === '/collection'`.
 - Les clics programmés par l'extension (`element.click()`, donc `event.isTrusted === false`) ne sont jamais pris pour des choix de Victor.
-- Sur 429 ou 5xx : respecter `Retry-After` (secondes ou date HTTP) s'il vaut au plus 60 s, réessayer **une seule fois** la même page ; sinon arrêter la lecture.
+- *(Révisé le 2026-11-02, Task 10.)* Sur 429, 5xx, erreur réseau ou délai dépassé : retenter la même page au plus **3 fois** ; attente = `Retry-After` (secondes ou date HTTP) s'il vaut au plus 60 s, sinon **5 s, 15 s, 45 s** ; `Retry-After` > 60 s ou 4e échec → arrêt. Autres 4xx → arrêt immédiat.
 - Une lecture incomplète n'est jamais affichée comme complète.
 - Hors mode Doublons, chaque appel du site passe tel quel. Toute exception de notre code retombe sur le `fetch` d'origine (échec ouvert).
 - Journaux et carnet : jamais de cookie, d'en-tête d'authentification ni de jeton. Les URL journalisées gardent chemin et requête seulement.
@@ -435,6 +435,41 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 > - **Libellés (M9, M10).** `LABELS.unexpected = 'Erreur inattendue : le site reste utilisable.'` ; `freshnessUnknown` affiche `LABELS.freshness` à côté de la date. `renderStatus` n'ajoute pas `LABELS.updating` en plus de `formatProgress` ; test : `formatProgress({ phase: 'incremental', pagesRead: 1, pageCount: null })` → `'Mise à jour… page 1'`.
 > - **Ordre des steps (I12).** Step 4 lance seulement `node --test tests/format.test.js` ; le test du manifeste passe à la fin du Step 5, quand `dom.js` et `main.js` existent (`npm test` → tous PASS).
 > - **Preuve (M20).** Ajouter au Step 6 : recherche `coeur` comparée au site ; totaux par rareté sous une recherche comparés au site.
+
+### Task 10: Lecture résistante aux erreurs serveur (décision de Victor, 2026-11-02)
+
+> Ajoutée après la preuve : le serveur a renvoyé une erreur passagère (« upstream connect error … reset reason: overflow », sans `Retry-After`) à la page 97 ; la lecture s'est arrêtée et « ↻ » repartait de la page 0. Victor a choisi : 3 nouveaux essais espacés, et la reprise là où la lecture s'est arrêtée. Se fait **avant** la suite de la preuve (Task 8, Step 6) ; Task 9 vient après.
+
+**Files:**
+- Modify: `extension/src/loader.js`, `extension/src/cache.js`, `extension/src/controller.js`, `extension/src/format.js`, `extension/src/dom.js`, `extension/src/main.js`
+- Test: `tests/loader.test.js`, `tests/cache.test.js`, `tests/controller.test.js`, `tests/format.test.js`
+
+**Interfaces:**
+- `loader.js` :
+  - Politique d'essai commune aux deux chargeurs : sur 429, 5xx, rejet de `fetchPage` hors abandon (réseau, `TimeoutError`) ou corps illisible, retenter la **même** page au plus 3 fois. Attente avant l'essai k (1 à 3) : `Retry-After` s'il est lisible et ≤ `maxRetryAfterMs` ; sinon `backoffMs[k − 1]`, avec `backoffMs = [5000, 15000, 45000]` (option). `Retry-After` > `maxRetryAfterMs` → `IncompleteLoadError({ reason: 'retry-after' })` sans attendre. 4e échec → `IncompleteLoadError` (`reason` `'http'` avec `status`, ou `'network'`). Autres 4xx → arrêt immédiat (`'http'`). Abandon pendant une attente → `AbortedLoadError`.
+  - Nouveau rappel optionnel `onRetry({ page, attempt, waitMs })`, appelé avant chaque attente d'essai.
+  - `loadAllPages` accepte `startPage = 0` et `initialEntries = []` (entrées déjà lues, dédoublonnées avec les nouvelles par `id`) et un rappel optionnel `onPage({ page, entries })` appelé après chaque page lue (`entries` = toutes les entrées accumulées, sans copie). `IncompleteLoadError` porte toujours `page` = la page en échec. `onProgress` reçoit `pagesRead` = nombre de pages lues **depuis la page 0** (reprise comprise).
+- `cache.js` : `createCache` gagne `getPartial(userId) -> Promise<Partial | null>`, `putPartial(userId, partial)`, `clearPartial(userId)` (clé `partial:<userId>`). `Partial = { entries: Entry[], nextPage: number, pageCount: number, savedAt: number }`.
+- `controller.js` :
+  - `deps.loadAll` reçoit en plus `{ startPage, initialEntries, onPage, onRetry }` ; `deps.loadNew` reçoit `onRetry`.
+  - Lecture complète : lit `getPartial(userId)` ; s'il existe et `now() − savedAt ≤ 24 h` → reprise à `nextPage` avec ses entrées, sinon départ à 0. Point de sauvegarde `putPartial` toutes les **10 pages** (via `onPage`) et à l'échec (`IncompleteLoadError` : `nextPage = err.page`). Succès vérifié → `clearPartial`. Échec de la vérification finale (`mismatch`) → `clearPartial` (la prochaine lecture repart de 0).
+  - `ControllerState` gagne `resumeAt: { page: number, pageCount: number } | null` (page **affichée**, base 1 : page en échec + 1) quand une lecture complète s'est arrêtée avec des pages gardées ; et `progress.retryInMs: number | null` pendant une attente d'essai.
+  - `enter()` sans enregistrement mais avec une reprise valide → reprend automatiquement. `refresh()` en `mode: 'error'` avec reprise → reprend.
+  - Toutes les écritures (`putPartial`, `clearPartial`) passent par les gardes de génération existantes.
+- `format.js` : `formatInterrupted({ page, pageCount }) -> 'Lecture interrompue à la page 97 / 271 : le serveur ne répond pas. Les pages déjà lues sont gardées.'` ; `formatProgress` ajoute, si `retryInMs` est un nombre, ` — le serveur ne répond pas, nouvel essai dans 15 s` (secondes arrondies au-dessus) ; `LABELS.resume = '↻ Reprendre'`.
+- `dom.js` / `main.js` : en `mode: 'error'` avec `resumeAt`, la barre affiche `formatInterrupted(resumeAt)` et le bouton `LABELS.resume` (qui appelle `controller.refresh()`), à la place de `LABELS.incompleteNone`. `main.js` câble `onRetry` et `onPage` jusqu'au contrôleur (par `deps.loadAll` / `deps.loadNew`).
+
+- [ ] **Step 1: Tests qui échouent.**
+  - loader : 503 sans `Retry-After` puis 200 → une attente de 5000, succès ; 503 quatre fois → attentes `[5000, 15000, 45000]` puis `IncompleteLoadError` `status: 503` ; rejet réseau puis 200 → une attente de 5000, succès ; 401 → aucune attente, arrêt ; `Retry-After: 2` puis 200 → attente 2000 ; `Retry-After: 120` → arrêt sans attente ; abandon pendant l'attente de 15 s → `AbortedLoadError`, aucun nouvel appel ; `onRetry` reçoit `{ page, attempt: 1, waitMs: 5000 }` ; `startPage: 2, initialEntries: <100 entrées>` avec `pageCount: 3` → un seul appel (page 2), 150 entrées, `onProgress` final `pagesRead: 3` ; `onPage` appelé après chaque page avec le cumul.
+  - cache : `putPartial` / `getPartial` / `clearPartial`, séparés par compte, copies (`structuredClone`).
+  - controller : lecture complète qui échoue à la page d'indice 96 (`IncompleteLoadError({ page: 96 })`) → `putPartial` avec `nextPage: 96` et les entrées lues, `mode: 'error'`, `resumeAt: { page: 97, pageCount: 271 }` ; puis `refresh()` → `loadAll` reçoit `startPage: 96` et ces entrées ; succès vérifié → `clearPartial`, `ready`. Reprise de plus de 24 h ignorée (départ à 0). `onPage` aux pages 9, 19… → `putPartial` toutes les 10 pages. `enter()` sans enregistrement avec reprise valide → `loadAll` avec `startPage`. `mismatch` final → `clearPartial`. Attente d'essai → `progress.retryInMs` renseigné puis remis à `null`.
+  - format : `formatInterrupted({ page: 97, pageCount: 271 })` → texte exact ci-dessus ; `formatProgress({ phase: 'full', pagesRead: 97, pageCount: 271, retryInMs: 14200 })` → `'Lecture de ta collection… page 97 / 271 — le serveur ne répond pas, nouvel essai dans 15 s'`.
+- [ ] **Step 2: Les voir échouer** — `npm test` → les nouveaux tests en FAIL.
+- [ ] **Step 3: Implémenter** selon les Interfaces (les tests existants de Task 4 sur « une seule nouvelle tentative » sont à mettre à jour vers la nouvelle politique : c'est voulu).
+- [ ] **Step 4: Les voir passer** — `npm test` → tous PASS ; `node --check` sur chaque fichier d'`extension/src/` ; chargement des fichiers dans l'ordre du manifeste sans `ReferenceError`.
+- [ ] **Step 5: Commit** — `git commit -m "feat: nouveaux essais espacés et reprise de la lecture complète"` (git add explicite).
+
+---
 
 ### Task 9: Publication (fil principal, avec Victor)
 
