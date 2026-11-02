@@ -7,7 +7,7 @@ Statut : en relecture
 
 Sur wiki-masters.com, la page collection ne permet pas de trier ni de filtrer les cartes possédées en plusieurs exemplaires. Victor veut **voir ses doublons**, triés du plus grand nombre d'exemplaires au plus petit, directement dans la page collection du site, comme s'il s'agissait d'une fonction native.
 
-L'API du site renvoie déjà le nombre d'exemplaires (`count`) pour chaque carte. Le projet est une extension Chrome, publiée sur le Chrome Web Store, qui exploite ce champ.
+L'API du site renvoie déjà le nombre d'exemplaires (`count`) pour chaque carte. Le projet est une extension Chrome, publiée sur le Chrome Web Store, qui exploite ce champ. *(Amendé : `count` vaut toujours 1 ; les exemplaires se comptent en regroupant les entrées, voir « Amendements ».)*
 
 Le script sera partagé avec d'autres joueurs, dont les collections peuvent être bien plus petites ou bien plus grandes que celle de Victor.
 
@@ -86,7 +86,7 @@ L'API n'est pas documentée. Conformément à la conviction de Victor « Sonde d
 | H1 | L'API s'authentifie par les cookies de session du site ; un appel same-origin depuis la page réussit sans jeton à fabriquer (ou avec un en-tête que le script peut reprendre des appels du site). | **Arrêt**, retour vers Victor. |
 | H2 | La pagination est stable : pages indexées à partir de 0, taille fixe, fin détectable (total ou nombre de pages dans l'enveloppe, ou page vide). | Adapter la boucle de lecture ; si la fin n'est pas détectable de façon fiable, retour vers Victor. |
 | H3 | Il y a une entrée par couple (`card_id`, `is_shiny`), et `count` est le nombre d'exemplaires de cette version. | Revoir la règle de doublon avec Victor. |
-| H4 | Expliquer les 270 pages : l'API renvoie-t-elle des cartes non possédées (`count` = 0) ? | Rien à changer côté design (le filtre `count ≥ 2` les écarte), mais le fait va au carnet. |
+| H4 | Expliquer les 270 pages : l'API renvoie-t-elle des cartes non possédées (`count` = 0) ? | Rien à changer côté design, mais le fait va au carnet. *(Expliquée : pas de carte non possédée.)* |
 | H5 | L'API accepte-t-elle un tri ou un filtre côté serveur sur `count` (ex. `sort=count`) ? | Si oui : utiliser le serveur plutôt que tout lire, le script devient bien plus léger. Si non : lecture complète + cache, comme décrit ici. |
 | H6 | L'API accepte-t-elle un paramètre de taille de page (ex. `limit`, `per_page`, `size`) pour réduire le nombre d'appels ? | Si non : 50 par page. |
 | H7 | Le script de l'extension, exécuté dans le contexte de la page (content script avec `world: "MAIN"`, `run_at: "document_start"`), peut intercepter l'appel du site à `my-collection` (`fetch` ou `XMLHttpRequest`) et lui substituer une réponse ; le site affiche alors ces cartes lui-même (rendu, clic, pagination). | **Repli décidé** : le script dessine sa propre grille en clonant le HTML d'une carte rendue par le site et en reproduisant son comportement au clic. |
@@ -122,7 +122,7 @@ Maquette de référence : `.superpowers/brainstorm/…/content/vue-a-v2.html` (n
 
 Recherche, étiquettes et rareté s'appliquent sur le cache, avec les mêmes règles que le site (relevées en H8). La pagination affichée correspond à la liste filtrée.
 
-Si la sonde ne parvient pas à reproduire exactement la règle de recherche du site (décision de Victor) : la recherche en mode Doublons devient une recherche locale approchée (sous-chaîne sur titre et catégorie, sans tenir compte de la casse ni des accents), et la vue l'indique (« recherche approximative »). Pas d'appel serveur supplémentaire pour la recherche.
+*(Caduc depuis la sonde : la règle exacte est reproduite.)* Si la sonde ne parvient pas à reproduire exactement la règle de recherche du site (décision de Victor) : la recherche en mode Doublons devient une recherche locale approchée (sous-chaîne sur titre et catégorie, sans tenir compte de la casse ni des accents), et la vue l'indique (« recherche approximative »). Pas d'appel serveur supplémentaire pour la recherche.
 
 ### Cache
 

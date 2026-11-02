@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** une extension Chrome (Manifest V3) qui ajoute « Doublons » au tri de la page collection de wiki-masters.com et affiche, avec le rendu natif du site, les cartes possédées en `count ≥ 2`, triées par `count` décroissant.
+**Goal:** une extension Chrome (Manifest V3) qui ajoute « Doublons » au tri de la page collection de wiki-masters.com et affiche, avec le rendu natif du site, une carte par groupe (`card_id`, `is_shiny`) d'au moins 2 exemplaires (N = somme des `count`), triés par N décroissant, avec un badge `×N`.
 
 **Architecture:** un content script exécuté dans le contexte de la page (`world: "MAIN"`, `document_start`) remplace `fetch` par une version qui, en mode Doublons, répond elle-même aux appels du site à `/api/my-collection` à partir d'un cache local de toute la collection. Le site dessine donc lui-même les cartes, les clics et la pagination. Tout ce qui ne dépend pas du DOM est en fonctions pures testées sous Node ; le DOM et l'intégration se prouvent en vrai, via Verdict.
 
@@ -13,26 +13,29 @@
 ## Global Constraints
 
 - Extension Manifest V3 ; un seul bloc `content_scripts` : `matches: ["https://www.wiki-masters.com/*"]`, `run_at: "document_start"`, `world: "MAIN"`. Aucun champ `permissions` ni `host_permissions`. Aucun code chargé à distance.
-- JavaScript simple, sans étape de build, sans dépendance npm (ni runtime ni dev). `package.json` ne contient que `name`, `private: true`, `scripts.test = "node --test tests/"`.
+- JavaScript simple, sans étape de build, sans dépendance npm (ni runtime ni dev). `package.json` ne contient que `name`, `private: true`, `scripts.test = "node --test \"tests/*.test.js\""` (sous Node 24, `node --test tests/` échoue : `Cannot find module …/tests`).
 - Chaque fichier de `extension/src/` est enveloppé dans `(() => { ... })();`, publie son API dans `globalThis.__wmDoublons` (objet partagé, créé s'il manque) et, si `module` existe, dans `module.exports` (pour les tests Node en CommonJS). Aucun fichier n'en `require` un autre : les dépendances sont injectées, seul `main.js` assemble.
-- Réseau : uniquement des `GET` same-origin vers `/api/my-collection`. Jamais deux appels en parallèle. Espacement entre deux pages : **400 ms**.
+- Réseau : uniquement des `GET` same-origin vers `/api/my-collection` et `/api/my-collection/stats`, toujours via le `fetch` d'origine (jamais via notre propre interception). Jamais deux appels de l'extension en parallèle. Au moins **400 ms** entre la fin d'un appel de l'extension et le début du suivant, quel qu'il soit (pages, fraîcheur). Délai maximal par appel : **20 s**.
+- Portée : interception et injection seulement quand `location.pathname === '/collection'`.
+- Les clics programmés par l'extension (`element.click()`, donc `event.isTrusted === false`) ne sont jamais pris pour des choix de Victor.
 - Sur 429 ou 5xx : respecter `Retry-After` (secondes ou date HTTP) s'il vaut au plus 60 s, réessayer **une seule fois** la même page ; sinon arrêter la lecture.
 - Une lecture incomplète n'est jamais affichée comme complète.
 - Hors mode Doublons, chaque appel du site passe tel quel. Toute exception de notre code retombe sur le `fetch` d'origine (échec ouvert).
 - Journaux et carnet : jamais de cookie, d'en-tête d'authentification ni de jeton. Les URL journalisées gardent chemin et requête seulement.
-- Texte affiché en français. Libellés exacts : option `Doublons` ; résumé `X cartes en double · Y exemplaires en trop` ; `chargé il y a … · ↻ rafraîchir` ; progression `Lecture de ta collection… page 4 / 270` et `Une seule fois, ensuite c'est gardé en cache.` ; bandeau `Ta collection a changé depuis le dernier chargement`.
+- Texte affiché en français. Libellés exacts : option `Doublons` ; résumé `X cartes en double · Y exemplaires en trop` ; `chargé il y a … · ↻ rafraîchir` ; progression `Lecture de ta collection… page 4 / 271` et `Une seule fois, ensuite c'est gardé en cache.` ; bandeau `Ta collection a changé depuis le dernier chargement`.
 - Doublon (règle de Victor, 2026-11-02) : les entrées se regroupent par (`card_id`, `is_shiny`) ; N = somme des `count` du groupe ; doublon si N ≥ 2. Shiny et normale ne s'additionnent jamais. La vue montre **une carte par groupe** avec un badge `×N`.
 - En mode Doublons, **deux** appels du site sont servis depuis le cache : la liste `/api/my-collection?…` et les totaux `/api/my-collection/stats?…` (le site en tire « Page x / N »).
 - Les valeurs propres au site (noms de champs, paramètres, sélecteurs) viennent **uniquement** du tableau « Valeurs pour le code » de `docs/carnet-api.md` (Task 1, fait). Ne jamais les deviner.
 - Chaque commit se termine par la ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Chaque commit fait un `git add` explicite des fichiers de la tâche ; jamais `git add -A` ni `git add .`.
 
 ## Review Focus
 
-1. **Collection vide ou sans doublon** : la vue affiche `Aucun doublon`, pas une grille vide muette ni une erreur. Tests : Task 3 (`computeDuplicates([])`), Task 7 (`respond` sans doublon), Task 8 (`formatSummary`).
+1. **Collection vide ou sans doublon** : la vue affiche `Aucun doublon`, pas une grille vide muette ni une erreur. Tests : Task 3 (`groupDuplicates([])`), Task 7 (`respond` sans doublon), Task 8 (`formatSummary`).
 2. **Singulier** : `1 carte en double · 1 exemplaire en trop`, pas `1 cartes`. Test : Task 8.
 3. **Quitter le mode, ou la page, pendant la lecture** : la lecture s'arrête, plus aucun appel, le site reprend la main. Tests : Task 4 (abandon par `AbortSignal`), Task 7 (`exit()` pendant `loading`).
-4. **Double clic sur « ↻ rafraîchir » ou réentrée pendant une lecture** : une seule lecture à la fois. Test : Task 7.
-5. **Page hors limites après un filtre** (le joueur était page 5, le filtre ne laisse que 2 pages) : réponse avec une liste vide et les bons totaux, pas de plantage. Test : Task 2 (`buildPageResponse`).
+4. **Double clic sur « ↻ rafraîchir », ou ↻ pendant la première lecture, ou réentrée** : une seule lecture à la fois. Tests : Task 7 (`refresh()` × 2 ; `refresh()` pendant le `loadAll` d'`enter()`).
+5. **Page hors limites après un filtre** (le joueur était page 5, le filtre ne laisse que 2 pages) : réponse avec une liste vide et les bons totaux, pas de plantage. Test : Task 2 (`buildListResponse`).
 
 ---
 
@@ -151,6 +154,13 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 4: Lancer et voir passer** — `npm test` → tous PASS.
 - [ ] **Step 5: Commit** — `git add package.json .gitignore tests/helpers.js tests/site-api.test.js extension/src/site-api.js && git commit -m "feat: adaptateur de l'API my-collection"`
 
+> **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
+> - La forme réelle des `tags` (`{ id, name, color, user_id, created_at }`) est dans `tests/fixtures/page0-stats1.json` (2e entrée), pas dans `page0.json` (aucune étiquette ni shiny ni doublon).
+> - Test en plus : les clés de `buildStatsResponse(page0Stats1, …)` sont exactement celles de `tests/fixtures/stats.json` (`total`, `totalUnique`, `rarityCounts`, `tagOptions`).
+> - `readFreshness` : `freshness = total + '|' + JSON.stringify(<rarityCounts aux clés triées>)`, pour ne pas dépendre de l'ordre des clés renvoyé par le serveur ; test avec un `rarityCounts` aux clés dans un autre ordre → même `freshness`.
+> - `makeEntry` : `id` par défaut = compteur (`'e1'`, `'e2'`, …) ; `cardId` par défaut dérivé de `title` — **deux entrées de même titre forment un groupe** (le dire en commentaire du helper).
+> - `fetchFreshness(fetchFn, { signal } = {})` transmet `signal` à `fetchFn`.
+
 ### Task 3: Groupes de doublons et filtres (`duplicates.js`)
 
 > Réécrite le 2026-11-02 : `count` vaut toujours 1 sur le compte de Victor ; un doublon est une carte présente en plusieurs entrées (décision de Victor).
@@ -185,6 +195,12 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 3: Écrire `extension/src/duplicates.js`** selon les Interfaces.
 - [ ] **Step 4: Lancer et voir passer** — `npm test` → tous PASS.
 - [ ] **Step 5: Commit** — `git commit -m "feat: groupes de doublons et filtres"` (fichiers de la tâche seulement).
+
+> **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
+> - `Group` porte aussi `members: Entry[]` (toutes les entrées du groupe).
+> - Représentante : comparer les dates avec `Date.parse(obtained_at)` (le nombre de décimales varie), pas les chaînes.
+> - `filterGroups` avec `tagId` : renvoie des copies dont `entry` est un membre portant l'étiquette (la carte affichée correspond au filtre). Test : groupe de 2 dont seule l'entrée non représentante porte `t1` → avec `tagId: 't1'`, `entry.id` est celle qui porte `t1`.
+> - `normalizeText` traite aussi `œ` → `oe` et `æ` → `ae` (comme un `unaccent` serveur). Test : `normalizeText('Cœur')` → `'coeur'`.
 
 ### Task 4: Lecture polie, complète et incrémentale (`loader.js`)
 
@@ -224,6 +240,12 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 4: Lancer et voir passer** — `npm test` → tous PASS.
 - [ ] **Step 5: Commit** — `git commit -m "feat: lecture complète et incrémentale de la collection"`
 
+> **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
+> - Erreurs : `new IncompleteLoadError({ reason, page = null, status = null })` avec `name = 'IncompleteLoadError'` ; `new AbortedLoadError()` avec `name = 'AbortedLoadError'`. Les autres modules les reconnaissent par `err.name` (et `err.reason`), sans `instanceof`.
+> - `loadAllPages` : `expectedTotal` peut être `null` → aucun contrôle de concordance dans le chargeur (le contrôleur vérifie après, voir Task 7).
+> - Abandon : un rejet de `fetchPage` alors que `signal.aborted` est vrai → `AbortedLoadError`, pas `'network'` ; le `sleep` fourni rejette sur abandon. Tests pour les deux.
+> - Nouveau : `createSerialFetch({ fetchFn, minGapMs = 400, timeoutMs = 20000, sleep, now }) -> (url: string, init?: { signal?: AbortSignal }) => Promise<Response>` : un seul appel à la fois (file d'attente), au moins `minGapMs` entre la fin d'un appel et le début du suivant, abandon après `timeoutMs` (combiné au `signal` de l'appelant). Tests : deux appels lancés ensemble s'exécutent l'un après l'autre ; l'écart mesuré avec `now` factice ≥ 400 ; un appel qui dépasse `timeoutMs` rejette. `main.js` (Task 8) fait passer **tous** les appels de l'extension par cette fonction.
+
 ### Task 5: Cache par compte (`cache.js`)
 
 **Files:**
@@ -246,6 +268,9 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 3: Écrire `extension/src/cache.js`.** `indexedDbStore` ouvre la base paresseusement, avec un seul object store clé-valeur. Il n'est pas testé sous Node : il est prouvé en Task 8 (rechargement de la page → `chargé il y a …`).
 - [ ] **Step 4: Lancer et voir passer** — `npm test` → tous PASS.
 - [ ] **Step 5: Commit** — `git commit -m "feat: cache local par compte"`
+
+> **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
+> - `memoryStore` stocke et rend des copies (`structuredClone`), comme IndexedDB. Test : modifier l'objet rendu par `get` ne change pas le contenu du cache.
 
 ### Task 6: Interception de `fetch` (`interceptor.js`)
 
@@ -273,6 +298,10 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 3: Écrire `extension/src/interceptor.js`.**
 - [ ] **Step 4: Lancer et voir passer** — `npm test` → tous PASS.
 - [ ] **Step 5: Commit** — `git commit -m "feat: interception des appels my-collection"`
+
+> **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
+> - Un `respond` asynchrone qui rejette retombe aussi sur `originalFetch` (test).
+> - Chaque réponse substituée est journalisée `intercept:serve` avec `{ path }` (chemin et requête seulement).
 
 ### Task 7: Contrôleur du mode Doublons (`controller.js`)
 
@@ -321,6 +350,17 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 3: Écrire `extension/src/controller.js`.** Une `AbortController` par lecture. Journaliser `mode`, `freshness:same|changed|unknown`, `refresh:incremental|full`, `load:done|failed`.
 - [ ] **Step 4: Lancer et voir passer** — `npm test` → tous PASS.
 - [ ] **Step 5: Commit** — `git commit -m "feat: contrôleur du mode Doublons"`
+
+> **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
+> - **Générations (C3).** Chaque `enter()` et chaque `exit()` incrémente un compteur de génération ; toute suite asynchrone (`fetchFreshness`, `loadAll`, `loadNew`, `cache`) vérifie que sa génération est toujours la courante avant de toucher l'état ; sinon elle s'arrête sans rien changer. « Mode actif » = `mode !== 'off'`. Tests : `exit()` pendant `fetchFreshness` → l'état reste `off`, `loadAll` n'est jamais appelé ; `exit()` puis `enter()` pendant une lecture → l'abandon tardif de la première ne touche pas l'état de la seconde.
+> - **Une seule lecture (I1).** Une seule promesse en cours pour `enter()` et `refresh()` ensemble : `refresh()` pendant le `loadAll` d'`enter()` rend la même promesse (test : `loadAll` appelé une fois). `enter()` pendant une lecture rend aussi la promesse en cours.
+> - **Interception pendant un rafraîchissement (I2).** `shouldIntercept(url)` = mode actif **et** un enregistrement est chargé **et** `classifyUrl(url) !== null`. Pendant `refresh()`, l'ancien enregistrement reste servi ; pendant la toute première lecture (pas d'enregistrement), rien n'est intercepté. Test : pendant `refresh()`, `shouldIntercept('/api/my-collection?page=0')` vaut `true` et `respond` sert l'ancien enregistrement.
+> - **Lecture complète vérifiée (I11).** `loadAll` reçoit `expectedTotal: null`. Après lui : `loadNew({ knownIds })` (cartes gagnées pendant la lecture), fusion, puis `fetchFreshness` ; si le nombre d'entrées fusionnées égale le `total` frais → enregistrement ; sinon `IncompleteLoadError({ reason: 'mismatch' })` (traitée comme tout échec de lecture). Test : `loadAll` rend 3, `loadNew` rend 1, `total` frais 4 → `ready` avec 4 entrées.
+> - **Compte (I10).** `setLastUserId(userId)` après **chaque** `fetchFreshness` réussi avec un `userId` non `null`. `refresh()` : si le `userId` frais diffère de celui de l'enregistrement → lecture complète pour le nouveau compte, sans fusion (test).
+> - **Modèle (M23).** Après chaque `fetchFreshness` réussi, `record.template` = le modèle frais (en mémoire ; persisté au prochain `put`).
+> - **Sortie (I6).** `exit()` remet `summary` et `pageCounts` à `null`.
+> - **Erreurs (M7, M9).** Les erreurs du chargeur se reconnaissent par `err.name`. Toute autre exception (IndexedDB…) → `error: 'unexpected'` (`ready` si un enregistrement existe, sinon `mode: 'error'`).
+> - **`deps` (M8).** `deps.cache` est une instance rendue par `createCache(store)` ; `deps.site` = `{ classifyUrl, parseSiteQuery, buildListResponse, buildStatsResponse, PAGE_SIZE: SITE.PAGE_SIZE }`.
 
 ### Task 8: Interface, assemblage et preuve en vrai
 
@@ -380,6 +420,22 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 7: Retouches.** Chaque défaut vu en Step 6 est corrigé, testé quand c'est une fonction pure, puis le point est refait.
 - [ ] **Step 8: Commit** — `git commit -m "feat: interface du mode Doublons et assemblage de l'extension"`
 
+> **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
+> - **Clics programmés (C2).** L'écouteur de capture de `main.js` ignore tout événement avec `event.isTrusted === false`, et ne réagit qu'aux options de la **liste de tri** (`findSortListbox(doc, trigger).contains(event.target)`), jamais à celles d'une autre liste (I5).
+> - **Relecture du site (I4).** `triggerSiteRefetch` : appelée hors de l'écouteur (`setTimeout(…, 0)`), et sérialisée (une seule à la fois) ; ferme d'abord la liste si elle est ouverte ; attend l'ouverture de la liste (≤ 2 s, sinon abandon journalisé) ; mémorise le **rang** de l'option `aria-selected="true"` et la retrouve par ce rang à la réouverture (la liste est recréée) ; `waitSettled` a un délai maximal de 15 s. Après un clic sur « Doublons », la liste se ferme (`trigger.click()`).
+> - **Fetch d'origine (I3).** `main.js` construit `serialFetch = createSerialFetch({ fetchFn: interceptor.originalFetch.bind(window), … })` ; `fetchFreshness` = `() => site.fetchFreshness(serialFetch)` ; `loadAll` lit `buildPageUrl(page, SITE.LOAD_SORT)` et `loadNew` lit `buildPageUrl(page, SITE.DATE_SORT)`, tous deux via `serialFetch` avec `{ credentials: 'same-origin', signal }`.
+> - **Portée (I8).** `shouldIntercept: (u) => location.pathname === '/collection' && controller.shouldIntercept(u)` ; injection seulement sur `/collection`.
+> - **Démarrage (I7).** L'intercepteur s'installe tout de suite ; `watch` attend `document.body` (`DOMContentLoaded` si besoin).
+> - **Sortie (I6).** À la sortie : `badgeCards(doc, null)` retire tous les badges ; `badgeCards` retire toujours les anciens badges avant d'en poser.
+> - **Ancre (I9).** `renderStatus` : avant le bloc de pagination ; s'il n'existe pas, avant la grille ; sinon, après la ligne de filtres. Point de preuve en plus : un filtre qui ne laisse aucun doublon affiche « Aucun doublon ».
+> - **Libellé du bouton (M14).** Le texte natif du bouton se déduit à l'exécution (nœud texte égal au libellé de l'option sélectionnée), se mémorise et se restaure à `null`.
+> - **Sélecteurs (M15, M16 bis).** Comparer `aria-labelledby` à `trigger.id` par égalité d'attributs (pas de sélecteur CSS construit avec l'`id`). Ignorer les `button[aria-haspopup="listbox"]` situés dans `[role="dialog"]` ; prendre le dernier de la ligne qui contient le champ texte de recherche de la page.
+> - **DOM (M19).** `injectOption`, `renderStatus`, `badgeCards` sont idempotents et ignorent leurs propres mutations ; nœuds construits par `createElement` / `textContent`, jamais `innerHTML` ; retirer les `id` des options clonées ; ne jamais modifier l'`aria-selected` des options natives.
+> - **Console (M17).** `main.js` publie `globalThis.__wmDoublons.controller` et passe `respond: (u) => globalThis.__wmDoublons.controller.respond(u)` (résolu à l'appel), pour que le point 9 de la preuve soit faisable.
+> - **Libellés (M9, M10).** `LABELS.unexpected = 'Erreur inattendue : le site reste utilisable.'` ; `freshnessUnknown` affiche `LABELS.freshness` à côté de la date. `renderStatus` n'ajoute pas `LABELS.updating` en plus de `formatProgress` ; test : `formatProgress({ phase: 'incremental', pagesRead: 1, pageCount: null })` → `'Mise à jour… page 1'`.
+> - **Ordre des steps (I12).** Step 4 lance seulement `node --test tests/format.test.js` ; le test du manifeste passe à la fin du Step 5, quand `dom.js` et `main.js` existent (`npm test` → tous PASS).
+> - **Preuve (M20).** Ajouter au Step 6 : recherche `coeur` comparée au site ; totaux par rareté sous une recherche comparés au site.
+
 ### Task 9: Publication (fil principal, avec Victor)
 
 **Files:**
@@ -398,3 +454,8 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 - [ ] **Step 4: Commit** — `git commit -m "docs: README, confidentialité et fiche du store"`
 - [ ] **Step 5: Dépôt GitHub.** Demander l'accord de Victor (nom du dépôt, visibilité publique) avant `gh repo create` et le premier `push`.
 - [ ] **Step 6: Soumission par Victor.** Victor crée son compte développeur Chrome Web Store (5 $) et téléverse le zip. Il remplit la fiche depuis `store/listing.md`, avec l'URL de `PRIVACY.md` sur GitHub, puis soumet. Claude ne soumet rien.
+
+> **Corrections pré-vol (2026-11-02) — prévalent sur le texte de la tâche :**
+> - **Historique (I13).** Avant le premier `push` : l'historique contient le préfixe de 8 caractères du `user_id` de Victor (exemple de la spec, commits `9a9ecf8` à `6274536`, masqué depuis `19abc53`). Proposer à Victor, avec AskUserQuestion : pousser un historique réécrit (un seul commit initial) ou tel quel. Rien n'est poussé avant sa réponse.
+> - **README (M24).** « un échange un-contre-un est vu au prochain ↻ » suppose qu'une carte reçue a un nouvel `id` et un `obtained_at` récent : l'écrire comme hypothèse non vérifiée.
+> - **Commits (M13).** Chaque tâche fait un `git add` explicite de ses fichiers ; jamais `git add -A` (un `test.json` non suivi traîne à la racine, à Victor).
