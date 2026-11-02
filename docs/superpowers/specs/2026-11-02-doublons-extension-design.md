@@ -92,7 +92,7 @@ L'API n'est pas documentée. Conformément à la conviction de Victor « Sonde d
 | H11 | La liste déroulante de tri accepte qu'on y injecte un choix ; on peut détecter sa sélection, afficher « Doublons » comme libellé sélectionné, et revenir proprement aux autres tris. | Repli : un bouton « Doublons » juste à droite de la liste déroulante. |
 | H12 | Il existe un signal de fraîcheur peu coûteux (un seul appel) qui change quand un `count` change, pas seulement quand une nouvelle carte entre : par exemple un total d'exemplaires dans `stats=1`, ou le `obtained_at` le plus récent sous le tri « Date d'ajout » s'il est mis à jour à chaque nouvel exemplaire. | Repli : comparer le seul total d'entrées. La limite (un exemplaire de plus d'une carte déjà possédée passe inaperçu) est alors écrite dans le README et rappelée par la date « chargé il y a … ». |
 | H13 | Les contrôles de la page (liste déroulante de tri, recherche, étiquettes, puces de rareté) se repèrent par la structure de la page, sans dépendre de leurs libellés français. | Repérer par libellés français, et le noter comme limite dans le README. |
-| H14 | Verdict peut lancer son navigateur avec l'extension non empaquetée chargée. | Pendant le développement, injecter le code du script dans la page via Verdict (`verdict js`) avant de choisir « Doublons » : l'interception doit seulement être en place avant le prochain appel du site à `my-collection`. Le comportement au tout premier chargement de la page est alors vérifié par Victor dans son Chrome. |
+| H14 | *Sans objet depuis le 2026-11-02 : les preuves se font dans le Chrome de Victor, extension chargée non empaquetée.* Verdict peut lancer son navigateur avec l'extension non empaquetée chargée. | Pendant le développement, injecter le code du script dans la page via Verdict (`verdict js`) avant de choisir « Doublons » : l'interception doit seulement être en place avant le prochain appel du site à `my-collection`. Le comportement au tout premier chargement de la page est alors vérifié par Victor dans son Chrome. |
 
 La sonde journalise des métadonnées (statuts HTTP, formes des réponses, noms de paramètres, en-têtes utiles), jamais de cookie ni de jeton. Ses résultats vont dans un carnet versionné du dépôt (`docs/carnet-api.md`), faits datés d'un côté, hypothèses de l'autre.
 
@@ -155,7 +155,7 @@ Chaque appel du site passe tel quel, sans modification ni retard. Le script n'aj
 
 ## Accès au site et tests
 
-- **Accès** (décision de Victor) : la sonde et les vérifications de bout en bout passent par Verdict. Victor ouvre la session Verdict et se connecte une fois ; ensuite Claude pilote lui-même le navigateur. Claude ne voit ni ne stocke le mot de passe ; le carnet et les journaux ne contiennent ni cookie ni jeton.
+- **Accès** (décision de Victor, révisée le 2026-11-02) : Cloudflare Turnstile refuse la connexion dans le navigateur automatisé de Verdict, et on ne cherche pas à le contourner. La sonde et les preuves de bout en bout se font donc **dans le Chrome de Victor**, où il est connecté normalement : Claude écrit de courts scripts que Victor colle dans la console DevTools ; chacun ne collecte que des métadonnées et rend son résultat par `copy(...)`, que Victor dépose dans `probe/out/` avec `! pbpaste > probe/out/<étape>.json`. Ce qui se voit à l'écran, Victor le décrit ou le capture. Ni cookie ni jeton ne transitent.
 - **Un seul compte** (celui de Victor, environ 270 pages). Conséquences :
   - H9 (limite de débit) est **observée sans être provoquée** : aucune rafale volontaire pour déclencher un 429. L'espacement de 300 à 500 ms reste une valeur prudente, non validée par un test de charge.
   - La séparation du cache par `user_id` et le cas des petites collections se testent hors navigateur, sur des données d'exemple (fonctions pures), pas sur un second compte réel.
@@ -165,7 +165,7 @@ Chaque appel du site passe tel quel, sans modification ni retard. Le script n'aj
 
 ## Lots proposés
 
-1. **Sonde** : vérifier H1 à H14 via Verdict, remplir le carnet. Arrêt si H1 tombe ; si H2 ou H3 tombe, retour vers Victor.
+1. **Sonde** : vérifier H1 à H13 dans le Chrome de Victor (console DevTools), remplir le carnet. Arrêt si H1 tombe ; si H2 ou H3 tombe, retour vers Victor.
 2. **Script** : le mode Doublons complet, vérifié en vrai sur le site avec le compte de Victor.
 3. **Publication** : dépôt GitHub public, README, zip de l'extension, textes de la fiche du store, page de confidentialité. Soumission au Chrome Web Store par Victor.
 

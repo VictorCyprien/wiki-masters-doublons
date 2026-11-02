@@ -37,10 +37,12 @@
 
 ### Task 1: Sonde de l'API et de la page (fil principal, avec Victor)
 
-Ce lot se fait dans le fil principal : il demande à Victor de se connecter une fois dans Verdict. Ce n'est pas du TDD : le livrable est le carnet, une fixture et le script de sonde.
+Ce lot se fait dans le fil principal. Ce n'est pas du TDD : le livrable est le carnet, une fixture et les scripts de sonde.
+
+> **Amendement 2026-11-02 (décision de Victor).** Cloudflare Turnstile refuse la connexion dans le navigateur de Verdict ; on ne le contourne pas. Toute la sonde passe par **la console DevTools du Chrome de Victor** : chaque `verdict …` des steps ci-dessous devient un script `probe/NN-*.js` que Victor colle dans la console ; le script ne renvoie que des métadonnées, Victor lance `copy(...)` puis `! pbpaste > probe/out/NN-*.json`, et Claude lit le fichier. Ce qui se voit (rendu, clic) est décrit ou capturé par Victor. Step 1 et Step 9 sont sans objet ; `INJECTION = extension` (Chrome de Victor). `probe/out/` est versionné seulement après vérification qu'aucun secret n'y figure.
 
 **Files:**
-- Create: `probe/sonde.js` (code passé à `verdict js`, renvoie un JSON de métadonnées)
+- Create: `probe/NN-*.js` (scripts collés dans la console de Victor, renvoient un JSON de métadonnées), `probe/out/NN-*.json`
 - Create: `docs/carnet-api.md`
 - Create: `tests/fixtures/page0.json`
 
@@ -340,7 +342,6 @@ test('fetchFreshness fait un seul appel et lit userId', async () => {
 
 **Files:**
 - Create: `extension/src/format.js`, `extension/src/log.js`, `extension/src/dom.js`, `extension/src/main.js`, `extension/manifest.json`
-- Create: `tools/inject.sh` (injection via `verdict js` si `INJECTION = verdict-js`)
 - Test: `tests/format.test.js`, `tests/manifest.test.js`
 
 **Interfaces:**
@@ -372,8 +373,10 @@ test('fetchFreshness fait un seul appel et lit userId', async () => {
 - [ ] **Step 2: Lancer et voir échouer** — `npm test` → les nouveaux tests en FAIL.
 - [ ] **Step 3: Écrire `format.js`, `log.js` et `manifest.json`.** Manifeste : nom `Doublons pour Wiki Masters (non officiel)`, `version: "0.1.0"`, `js` dans l'ordre `site-api, duplicates, loader, cache, interceptor, controller, format, log, dom, main`.
 - [ ] **Step 4: Lancer et voir passer** — `npm test` → tous PASS.
-- [ ] **Step 5: Écrire `dom.js`, `main.js` et `tools/inject.sh`.** `inject.sh` concatène les fichiers `js` du manifeste dans l'ordre et les passe à `verdict js`. `main.js` doit fonctionner injecté après le chargement de la page : balayage initial, puis `watch`.
-- [ ] **Step 6: Preuve en vrai via Verdict**, journaux actifs (`localStorage['wm-doublons:debug'] = '1'`) et suivis avec `verdict console`. Cocher chaque point avec sa preuve (capture ou ligne de journal) :
+- [ ] **Step 5: Écrire `dom.js` et `main.js`.** `main.js` fait un balayage initial puis `watch` (le site navigue sans recharger).
+> **Amendement 2026-11-02.** Steps 6 et 7 se font dans le Chrome de Victor, extension chargée non empaquetée (`chrome://extensions`, mode développeur). Les `verdict network` deviennent l'onglet Réseau de DevTools (Victor capture ou décrit) ; les journaux `[wm-doublons]` de la console sont copiés par Victor (`! pbpaste > probe/out/preuve-*.txt`).
+
+- [ ] **Step 6: Preuve en vrai**, journaux actifs (`localStorage['wm-doublons:debug'] = '1'`) et lus dans la console de Victor. Cocher chaque point avec sa preuve (capture ou ligne de journal) :
   1. « Doublons » apparaît dans la liste déroulante et peut être sélectionné.
   2. Au premier chargement, la progression défile. `verdict network` montre des appels un par un, espacés d'au moins 400 ms.
   3. La grille montre les doublons au rendu du site, triés par `count`, avec le badge `×N`. Le résumé est juste : à comparer aux chiffres de la sonde.
@@ -399,7 +402,7 @@ test('fetchFreshness fait un seul appel et lit userId', async () => {
   - `PRIVACY.md` : l'extension lit la collection du joueur sur wiki-masters.com ; les données restent dans le navigateur ; rien n'est transmis, vendu ni partagé.
   - `store/listing.md` : description courte et longue, justification d'usage unique, déclaration d'usage des données.
 - [ ] **Step 2: Icône et paquet.** Ajouter une icône PNG de 128 × 128 px dans `extension/icons/`, déclarée dans le manifeste. Écrire `tools/package.sh`, qui zippe le contenu de `extension/` dans `dist/`. Vérifier : `unzip -l dist/wm-doublons-1.0.0.zip` liste `manifest.json` à la racine. Lancer `npm test` : tous PASS.
-- [ ] **Step 3: Captures pour la fiche (1280 × 800).** `verdict viewport 1280 800` puis `verdict screenshot`, en mode Doublons. Victor valide les captures avant usage : elles montrent sa collection.
+- [ ] **Step 3: Captures pour la fiche (1280 × 800).** Victor les fait dans son Chrome, en mode Doublons. Victor valide les captures avant usage : elles montrent sa collection.
 - [ ] **Step 4: Commit** — `git commit -m "docs: README, confidentialité et fiche du store"`
 - [ ] **Step 5: Dépôt GitHub.** Demander l'accord de Victor (nom du dépôt, visibilité publique) avant `gh repo create` et le premier `push`.
 - [ ] **Step 6: Soumission par Victor.** Victor crée son compte développeur Chrome Web Store (5 $) et téléverse le zip. Il remplit la fiche depuis `store/listing.md`, avec l'URL de `PRIVACY.md` sur GitHub, puis soumet. Claude ne soumet rien.
