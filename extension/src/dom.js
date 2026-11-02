@@ -150,45 +150,54 @@
   // --- Relecture par le site ----------------------------------------------------------------
   let refetchTail = Promise.resolve();
 
-  function triggerSiteRefetch(doc, { waitSettled, log = noop } = {}) {
-    const run = () => refetchOnce(doc, waitSettled || (() => Promise.resolve()), log);
+  function triggerSiteRefetch(doc, { waitSettled, log = noop, shouldContinue = () => true } = {}) {
+    const run = () => refetchOnce(doc, waitSettled || (() => Promise.resolve()), log, shouldContinue);
     const p = refetchTail.then(run, run);
     refetchTail = p.catch(noop);
     return p;
   }
 
-  async function refetchOnce(doc, waitSettled, log) {
+  async function refetchOnce(doc, waitSettled, log, shouldContinue) {
+    let trigger = null;
+    const listbox = () => findSortListbox(doc, trigger);
+    // aria-expanded quand il existe, sinon présence de la liste.
+    const isOpen = () => {
+      const a = trigger.getAttribute('aria-expanded');
+      return a === 'true' || a === 'false' ? a === 'true' : !!listbox();
+    };
+    const bail = (reason) => {
+      try { if (trigger && isOpen()) trigger.click(); } catch { /* ignoré */ }
+      log('refetch:abort', { reason });
+    };
     try {
-      const trigger = findSortTrigger(doc);
+      trigger = findSortTrigger(doc);
       if (!trigger) return log('refetch:abort', { reason: 'no-trigger' });
-      const listbox = () => findSortListbox(doc, trigger);
-      if (listbox()) {
+      if (!shouldContinue()) return log('refetch:abort', { reason: 'stopped' });
+      if (isOpen()) {
         trigger.click();
-        if (!(await waitFor(() => !listbox(), 2000))) return log('refetch:abort', { reason: 'close-timeout' });
+        if (!(await waitFor(() => !isOpen() && !listbox(), 2000))) return log('refetch:abort', { reason: 'close-timeout' });
       }
       const open = async () => {
-        if (!listbox()) trigger.click();
+        if (!isOpen()) trigger.click();
         return waitFor(listbox, 2000);
       };
+      if (!shouldContinue()) return log('refetch:abort', { reason: 'stopped' });
       const ul = await open();
-      if (!ul) return log('refetch:abort', { reason: 'open-timeout' });
+      if (!ul) return bail('open-timeout');
       const natives = nativeOptions(ul);
       const rank = natives.findIndex((o) => o.getAttribute('aria-selected') === 'true');
       const other = natives.findIndex((_, i) => i !== rank);
-      if (rank === -1 || other === -1) {
-        trigger.click();
-        return log('refetch:abort', { reason: 'no-option' });
-      }
+      if (rank === -1 || other === -1) return bail('no-option');
+      if (!shouldContinue()) return bail('stopped');
       let settled = waitSettled();
       natives[other].click();
       await settled;
+      if (!shouldContinue()) return bail('stopped');
       const ul2 = await open();
-      if (!ul2) return log('refetch:abort', { reason: 'reopen-timeout' });
+      if (!ul2) return bail('reopen-timeout');
       const back = nativeOptions(ul2)[rank];
-      if (!back) {
-        trigger.click();
-        return log('refetch:abort', { reason: 'rank-lost' });
-      }
+      if (!back) return bail('rank-lost');
+      if (!shouldContinue()) return bail('stopped');
       settled = waitSettled();
       back.click();
       await settled;
@@ -211,47 +220,54 @@
     return card ? card.parentElement : null;
   };
 
-  // Bloc de pagination : le parent (avec boutons) du span « x / y ».
+  // Bloc de pagination : l'élément qui contient directement le span « x / y » (hors barre à nous et cartes).
   function findPagination(doc) {
-    const span = [...doc.querySelectorAll('span')].find((s) => !s.children.length && /^\D*\d+\s*\/\s*\d+\s*$/.test(s.textContent));
-    for (let p = span && span.parentElement; p && p !== doc.body; p = p.parentElement) {
-      if (p.querySelectorAll('button').length >= 2) return p;
-    }
-    return null;
+    const span = [...doc.querySelectorAll('span')].find((x) => !x.children.length
+      && /^\D*\d+\s*\/\s*\d+\s*$/.test(x.textContent) && !x.closest(`[${STATUS}]`) && !x.closest(CARD));
+    return span ? span.parentElement : null;
   }
 
-  // Avant la pagination, sinon avant la grille, sinon après la ligne de filtres.
+  // Avant la pagination, sinon avant la grille, sinon après la ligne de filtres (`after`).
   function placeBefore(doc) {
     const pag = findPagination(doc);
-    if (pag) return { parent: pag.parentElement, before: pag };
+    if (pag && pag.parentElement) return { parent: pag.parentElement, before: pag };
     const grid = findGrid(doc);
-    if (grid) return { parent: grid.parentElement, before: grid };
+    if (grid && grid.parentElement) return { parent: grid.parentElement, before: grid };
     const trigger = findSortTrigger(doc);
     const row = trigger && trigger.parentElement && trigger.parentElement.parentElement;
-    if (row && row.parentElement) return { parent: row.parentElement, before: row.nextSibling };
+    if (row && row.parentElement) return { parent: row.parentElement, after: row };
     return null;
   }
 
-  function statusLines(state, now, f) {
+  const inPlace = (bar, spot) => bar.parentElement === spot.parent
+    && (spot.after ? bar.previousSibling === spot.after : bar.nextSibling === spot.before);
+
+  // Lignes : { text, refresh } ; le bouton suit la date sur la même ligne.
+  function statusRows(state, now, f) {
     const { LABELS, formatProgress, formatSummary, formatLoaded } = f;
-    const lines = [];
+    const rows = [];
+    let refreshPlaced = false;
     if (state.mode === 'loading') {
       const p = state.progress;
-      lines.push(p ? formatProgress(p) : LABELS.updating);
-      if (p && p.phase === 'full') lines.push(LABELS.loadingNote);
+      rows.push({ text: p ? formatProgress(p) : LABELS.updating });
+      if (p && p.phase === 'full') rows.push({ text: LABELS.loadingNote });
     } else if (state.mode === 'ready') {
-      if (state.summary) lines.push(formatSummary(state.summary));
+      if (state.summary) rows.push({ text: formatSummary(state.summary) });
       let when = state.loadedAt ? formatLoaded(state.loadedAt, now) : '';
       if (state.freshnessUnknown) when = `${when}${when ? ' · ' : ''}${LABELS.freshness}`;
-      if (when) lines.push(when);
+      if (when) {
+        rows.push({ text: when, refresh: true });
+        refreshPlaced = true;
+      }
     }
     const err = state.error;
     if (err) {
-      if (state.mode === 'error') lines.push(err === 'freshness' ? LABELS.freshness : err === 'incomplete' ? LABELS.incompleteNone : LABELS.unexpected);
-      else lines.push(err === 'incomplete' ? LABELS.incompleteKept : LABELS.unexpected);
+      if (state.mode === 'error') rows.push({ text: err === 'freshness' ? LABELS.freshness : err === 'incomplete' ? LABELS.incompleteNone : LABELS.unexpected });
+      else rows.push({ text: err === 'incomplete' ? LABELS.incompleteKept : LABELS.unexpected });
     }
-    if (state.mode === 'ready' && state.stale) lines.push(LABELS.stale);
-    return lines;
+    if (state.mode === 'ready' && state.stale) rows.push({ text: LABELS.stale });
+    if ((state.mode === 'ready' || state.mode === 'error') && !refreshPlaced) rows.push({ text: '', refresh: true });
+    return rows;
   }
 
   function renderStatus(doc, state, now, { onRefresh, formats } = {}) {
@@ -262,29 +278,33 @@
         return;
       }
       const f = formats || globalThis.__wmDoublons;
-      const lines = statusLines(state, now, f);
-      const canRefresh = state.mode === 'ready' || state.mode === 'error';
-      const sig = JSON.stringify([lines, canRefresh]);
+      const rows = statusRows(state, now, f);
+      const sig = JSON.stringify(rows);
       const spot = placeBefore(doc);
-      if (!spot || !spot.parent) return;
-      if (bar && bar.getAttribute(STATUS) === sig && bar.parentElement === spot.parent && bar.nextSibling === spot.before) return;
+      if (!spot) return;
+      if (bar && bar.getAttribute(STATUS) === sig && inPlace(bar, spot)) return;
       if (!bar || bar.getAttribute(STATUS) !== sig) {
         const fresh = el(doc, 'div', undefined, { [STATUS]: sig, role: 'status' });
-        fresh.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;justify-content:center;padding:8px 12px;margin:8px auto;font-size:14px;';
-        lines.forEach((t) => fresh.appendChild(el(doc, 'span', t)));
-        if (canRefresh) {
-          const b = el(doc, 'button', f.LABELS.refresh, { type: 'button' });
-          b.style.cssText = 'cursor:pointer;text-decoration:underline;background:none;border:0;color:inherit;font:inherit;';
-          b.addEventListener('click', (e) => {
-            e.preventDefault();
-            try { onRefresh && onRefresh(e); } catch { /* ignoré */ }
-          });
-          fresh.appendChild(b);
+        fresh.style.cssText = 'display:flex;flex-direction:column;gap:4px;align-items:center;padding:8px 12px;margin:8px auto;font-size:14px;text-align:center;';
+        for (const r of rows) {
+          const row = el(doc, 'div');
+          if (r.text) row.appendChild(el(doc, 'span', r.text));
+          if (r.refresh) {
+            if (r.text) row.appendChild(el(doc, 'span', ' · '));
+            const b = el(doc, 'button', f.LABELS.refresh, { type: 'button' });
+            b.style.cssText = 'cursor:pointer;text-decoration:underline;background:none;border:0;color:inherit;font:inherit;';
+            b.addEventListener('click', (e) => {
+              e.preventDefault();
+              try { onRefresh && onRefresh(e); } catch { /* ignoré */ }
+            });
+            row.appendChild(b);
+          }
+          fresh.appendChild(row);
         }
         if (bar) bar.remove();
         bar = fresh;
       }
-      spot.parent.insertBefore(bar, spot.before);
+      spot.parent.insertBefore(bar, spot.after ? spot.after.nextSibling : spot.before);
     } catch (err) {
       try { console.warn('[wm-doublons] renderStatus', err); } catch { /* ignoré */ }
     }
