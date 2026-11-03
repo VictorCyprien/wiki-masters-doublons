@@ -22,6 +22,8 @@
       respond: async (u) => W.controller.respond(u),
       isWatched: (u) => W.classifyUrl(u) === 'list',
       onSettled: () => { waiters.forEach((w) => w()); },
+      // Réponse substituée en échec : le site a reçu la vraie liste ; on quitte le service du cache.
+      onFallback: () => { if (controller !== null) controller.abandon(); },
       log,
     });
 

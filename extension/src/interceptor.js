@@ -20,7 +20,7 @@
 
   function installInterceptor({
     target, shouldIntercept, respond,
-    isWatched = () => false, onSettled = () => {}, log = () => {},
+    isWatched = () => false, onSettled = () => {}, onFallback = () => {}, log = () => {},
   }) {
     const originalFetch = target.fetch;
     const safeLog = (...a) => { try { log(...a); } catch { /* ignoré */ } };
@@ -51,6 +51,7 @@
 
       const fallback = (err) => {
         safeLog('intercept:fallback', { path: pathOf(url), error: String((err && err.message) || err) });
+        try { onFallback(url, err); } catch { /* ignoré */ }
         return passthrough();
       };
 

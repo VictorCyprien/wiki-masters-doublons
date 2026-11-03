@@ -754,3 +754,66 @@ test('échec d\'écriture du partiel : pas de resumeAt', async () => {
   assert.equal(c.getState().error, 'incomplete');
   assert.equal(c.getState().resumeAt, null);
 });
+
+test('abandon() en ready : error unexpected, plus d\'interception, compteurs effacés', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec([makeEntry({ title: 'A' }), makeEntry({ title: 'A' })]));
+  await c.enter();
+  c.respond(LIST);
+  assert.notEqual(c.getState().pageCounts, null);
+  c.abandon();
+  const s = c.getState();
+  assert.equal(s.mode, 'error');
+  assert.equal(s.error, 'unexpected');
+  assert.equal(s.summary, null);
+  assert.equal(s.pageCounts, null);
+  assert.equal(s.loadedAt, null);
+  assert.equal(c.shouldIntercept(LIST), false);
+});
+
+test('abandon() en off : sans effet', () => {
+  const { c, states } = setup();
+  c.abandon();
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(states.length, 0);
+});
+
+test('abandon() pendant une lecture : signal aborted, l\'abandon tardif ne change pas l\'erreur', async () => {
+  const d = deferred();
+  let signal;
+  const { c, cache } = setup({
+    loadNew: (o) => { signal = o.signal; return d.promise; },
+  });
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  const p = c.refresh();
+  await tick();
+  c.abandon();
+  assert.equal(signal.aborted, true);
+  d.reject(new AbortedLoadError());
+  await p;
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'unexpected');
+});
+
+test('enter() après abandon() : mode Doublons de nouveau servi', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  c.abandon();
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().error, null);
+  assert.equal(c.shouldIntercept(LIST), true);
+});
+
+test('refresh() après abandon() : repart du cache, aucune lecture', async () => {
+  const { c, cache, calls } = setup();
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  c.abandon();
+  await c.refresh();
+  assert.equal(calls.loadAll.length + calls.loadNew.length, 0);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.shouldIntercept(LIST), true);
+});

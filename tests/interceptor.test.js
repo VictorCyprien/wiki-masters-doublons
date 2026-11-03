@@ -158,3 +158,44 @@ test('respond asynchrone renvoie un objet non sérialisable : retombée sur l\'o
   assert.equal(await target.fetch('/x'), marker);
   assert.equal(calls.length, 1);
 });
+
+test('onFallback : appelé avec l\'URL et l\'erreur, en synchrone et en asynchrone', async () => {
+  const seen = [];
+  const a = makeTarget();
+  installInterceptor({
+    target: a.target, shouldIntercept: () => true,
+    respond: () => { throw new Error('sync'); },
+    onFallback: (url, err) => seen.push([url, err.message]),
+  });
+  a.target.fetch('/x?a=1');
+  const b = makeTarget();
+  installInterceptor({
+    target: b.target, shouldIntercept: () => true,
+    respond: async () => { throw new Error('async'); },
+    onFallback: (url, err) => seen.push([url, err.message]),
+  });
+  await b.target.fetch('/y');
+  assert.deepEqual(seen, [['/x?a=1', 'sync'], ['/y', 'async']]);
+});
+
+test('onFallback qui lève : la retombée sur l\'original a lieu quand même', async () => {
+  const { target, marker, calls } = makeTarget();
+  installInterceptor({
+    target, shouldIntercept: () => true,
+    respond: async () => { throw new Error('boom'); },
+    onFallback: () => { throw new Error('rappel'); },
+  });
+  assert.equal(await target.fetch('/x'), marker);
+  assert.equal(calls.length, 1);
+});
+
+test('onFallback : jamais appelé sans échec', async () => {
+  let n = 0;
+  const a = makeTarget();
+  installInterceptor({ target: a.target, shouldIntercept: () => false, respond: () => ({}), onFallback: () => { n += 1; } });
+  a.target.fetch('/x');
+  const b = makeTarget();
+  installInterceptor({ target: b.target, shouldIntercept: () => true, respond: async () => ({ ok: 1 }), onFallback: () => { n += 1; } });
+  await b.target.fetch('/x');
+  assert.equal(n, 0);
+});

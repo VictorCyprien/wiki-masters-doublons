@@ -348,11 +348,15 @@
     function refresh() {
       if (inflight) return inflight;
       if (state.mode === 'off') return Promise.resolve();
+      // Après abandon() : rien n'est en mémoire, mais le cache local l'est ; on repart de lui
+      // (comme une entrée en mode) plutôt que de relancer une lecture complète.
+      if (state.mode === 'error' && state.error === 'unexpected') return enter();
       ctrl = new AbortController();
       return start(gen, refreshBody);
     }
 
-    function exit() {
+    // Abandonne la lecture en cours et oublie l'enregistrement servi.
+    function drop(mode, error) {
       gen += 1;
       ctrl?.abort();
       ctrl = null;
@@ -361,9 +365,18 @@
       recordUserId = null;
       memo = { record: null, groups: null };
       setState({
-        mode: 'off', progress: null, loadedAt: null, stale: false, freshnessUnknown: false,
-        error: null, summary: null, pageCounts: null, resumeAt: null,
+        mode, progress: null, loadedAt: null, stale: false, freshnessUnknown: false,
+        error, summary: null, pageCounts: null, resumeAt: null,
       });
+    }
+
+    function exit() { drop('off', null); }
+
+    // Une réponse substituée a échoué : plus rien n'est servi depuis le cache, le site reprend
+    // la main ; la vue dit « Erreur inattendue » au lieu de présenter la vraie liste comme des doublons.
+    function abandon() {
+      if (state.mode === 'off') return;
+      drop('error', 'unexpected');
     }
 
     function shouldIntercept(url) {
@@ -399,7 +412,7 @@
       throw new Error('URL non gérée');
     }
 
-    return { enter, exit, refresh, shouldIntercept, respond, getState: () => ({ ...state }) };
+    return { enter, exit, abandon, refresh, shouldIntercept, respond, getState: () => ({ ...state }) };
   }
 
   const api = { createController };
