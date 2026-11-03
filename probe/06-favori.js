@@ -27,7 +27,8 @@
         t: new Date().toISOString(), via: 'fetch', method, path: pathOf(url), status: res.status,
         reqHeaderNames: headerNames(init && init.headers),
         reqBody: typeof reqBody === 'string' ? mask(reqBody) : reqBody ? `(${Object.prototype.toString.call(reqBody)})` : null,
-        resBody: mask(body),
+        // seules les réponses des tables de cartes sont gardées (pas le profil, par exemple)
+        resBody: /\/rest\/v1\/user_card/.test(pathOf(url)) ? mask(body) : '(non gardé)',
       });
       console.log('[sonde6]', method, pathOf(url), res.status);
     }
@@ -42,7 +43,8 @@
     if (m && m.method !== 'GET') {
       this.addEventListener('loadend', () => {
         P.log.push({ t: new Date().toISOString(), via: 'xhr', method: m.method, path: pathOf(m.url), status: this.status,
-          reqBody: typeof body === 'string' ? mask(body) : null, resBody: mask(this.responseText) });
+          reqBody: typeof body === 'string' ? mask(body) : null,
+          resBody: /\/rest\/v1\/user_card/.test(pathOf(m.url)) ? mask(this.responseText) : '(non gardé)' });
         console.log('[sonde6] xhr', m.method, pathOf(m.url), this.status);
       });
     }
