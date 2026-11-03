@@ -10,7 +10,9 @@ Doublons pour Wiki Masters (non officiel)
 
 **Short Description**
 
-Ajoute « Doublons » au tri de ta collection Wiki Masters : retrouve tes cartes en plusieurs exemplaires. Non officiel.
+Trouve tes cartes en double sur Wiki Masters : un choix « Doublons » apparaît dans le tri de ta collection.
+
+(Le tableau de bord la lit dans le champ `description` du manifeste : elle ne se modifie qu'avec une nouvelle version.)
 
 **Detailed Description**
 
@@ -140,6 +142,20 @@ https://github.com/VictorCyprien/wiki-masters-doublons/blob/main/PRIVACY.md
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
 | 1.0.0 | 2026-11-03 | Première version : tri « Doublons », badge ×N, résumé, rafraîchir. | Draft |
+
+## Test Instructions
+
+Champ « Instructions de test » du tableau de bord (en anglais pour les relecteurs). Ne jamais y mettre les identifiants de Victor.
+
+```
+The extension only acts on https://www.wiki-masters.com/collection, for a signed-in player.
+1. Sign in to wiki-masters.com (a free account works) and open https://www.wiki-masters.com/collection.
+2. In the sort menu, choose "Doublons" (duplicates).
+3. The first time, the extension reads the collection page by page and shows its progress. It then shows one card per duplicate, with a ×N badge. A new account with no card owned twice shows "Aucun doublon" (no duplicates).
+4. Choosing another sort option returns to the site's normal view.
+5. Clicking the toolbar icon opens a small information popup with optional support links.
+No permissions are requested, no remote code is loaded, and no data leaves the browser.
+```
 
 ## Review Notes
 
