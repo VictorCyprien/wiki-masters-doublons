@@ -131,7 +131,7 @@ https://github.com/VictorCyprien/wiki-masters-doublons/blob/main/PRIVACY.md
 
 **Trader Status (UE)**: Non professionnel (non-trader), déclaré le 2026-11-03 : extension gratuite, projet personnel hors de la micro-entreprise, tips occasionnels. À revoir au transfert vers le compte pro, ou si l'extension entre dans la micro-entreprise (facturation, chiffre d'affaires, version payante).
 
-**Contact Email**: à compléter par Victor (affiché publiquement ; doit être surveillé)
+**Contact Email**: l'adresse pro de Victor (affichée publiquement ; à surveiller). Nom visible : Victor Cyprien.
 
 **Support URL**: https://github.com/VictorCyprien/wiki-masters-doublons/issues
 
@@ -141,7 +141,7 @@ https://github.com/VictorCyprien/wiki-masters-doublons/blob/main/PRIVACY.md
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| 1.0.0 | 2026-11-03 | Première version : tri « Doublons », badge ×N, résumé, rafraîchir. | Draft |
+| 1.0.0 | 2026-11-03 | Première version : tri « Doublons », badge ×N, résumé, rafraîchir. | Envoyée pour examen le 2026-11-03 (examen approfondi : accès à l'hôte) |
 
 ## Test Instructions
 
