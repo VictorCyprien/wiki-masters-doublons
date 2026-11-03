@@ -20,6 +20,8 @@ La sonde a fait tomber H3 : `count` vaut toujours 1 et un doublon est une **cart
 - Les changements faits dans ce navigateur (en mode Doublons ou non) sont suivis : chaque requête de favori ou d'étiquette **réussie** met à jour les cartes gardées. Seuls l'adresse, la méthode, le corps et le statut sont lus ; jamais les en-têtes (clés, jetons).
 - Les changements faits ailleurs (autre appareil, autre navigateur) apparaissent à la prochaine lecture complète, sans appel en plus : limite écrite dans le README.
 
+**Présentation et soutien (Victor, 2026-11-03).** Avant la publication : une vraie icône (deux cartes décalées et une pastille « ×2 », fond sombre, cartes vert menthe ; aucun logo ni marque du site), et une petite fenêtre qui s'ouvre au clic sur l'icône de l'extension dans la barre du navigateur, **jamais sur la page du site**. La fenêtre explique en quelques lignes ce que fait l'extension et comment s'en servir, rassure sur la vie privée, et propose deux liens de soutien facultatifs (Buy Me a Coffee et tip.md) qui s'ouvrent dans un nouvel onglet. Aucune permission en plus, aucun suivi. Les textes visibles (nom, description, infobulle, fenêtre) sont écrits simplement, en tutoyant, comme on parle à un autre joueur.
+
 ## Objectifs
 
 - Ajouter « Doublons » comme cinquième choix dans la liste déroulante de tri existante (Rareté, Nom, Favoris, Date d'ajout, **Doublons**).

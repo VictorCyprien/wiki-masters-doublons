@@ -510,6 +510,43 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 
 ---
 
+### Task 12: Icône et fenêtre de l'extension (décision de Victor, 2026-11-03)
+
+> Ajoutée après la preuve : dans le navigateur, l'extension a l'icône grise par défaut, rien ne s'ouvre au clic, et les textes manquent ou sonnent faux. Victor veut aussi deux liens de soutien, **uniquement** dans la fenêtre de l'extension. Se fait après la vague de correctifs de la relecture finale, avant Task 9. Spec : « Présentation et soutien » dans les Amendements.
+
+**Files:**
+- Create: `tools/make-icons.js`, `extension/icons/icon-16.png`, `icon-32.png`, `icon-48.png`, `icon-128.png` (produits par le script), `extension/popup/popup.html`, `extension/popup/popup.css`, `extension/popup/popup.js`, `tests/popup.test.js`
+- Modify: `extension/manifest.json`, `tests/manifest.test.js`, `package.json` (script `icons`)
+
+**Interfaces / décisions :**
+- `tools/make-icons.js` : Node seul, **aucune dépendance** (`zlib` et `fs` du cœur). Dessine en sur-échantillonnage (au moins 4×4 par pixel) puis encode en PNG RGBA (signature, IHDR, IDAT `zlib.deflateSync`, IEND, CRC32 maison). Sortie déterministe (mêmes octets à chaque lancement). `npm run icons` le lance. Dessin, en proportions de la taille `S` : carré arrondi plein fond `#141416` (rayon ≈ 0,22 S) ; carte arrière vert menthe foncé `#7fbfa3`, carte avant vert menthe `#cdeee0` (rayon ≈ 0,08 S, rapport ≈ 5:7, décalées vers le haut-droite) avec une fine bordure sombre ; pastille ronde en bas à droite, fond `#f4f4f5`, contenant « ×2 » sombre en tracé simple (deux traits en croix + un « 2 » en segments) à 48 et 128 px, et réduite à un point plein à 16 et 32 px. Pas de lettres « WM », pas de logo du site.
+- `manifest.json` : ajouter `"icons": { "16", "32", "48", "128" }` vers `icons/icon-N.png` et `"action": { "default_title": "Doublons pour Wiki Masters", "default_popup": "popup/popup.html", "default_icon": { "16", "32" } }`. `"description"` devient exactement : `Trouve tes cartes en double sur Wiki Masters : un choix « Doublons » apparaît dans le tri de ta collection.` Toujours **aucune** `permissions` ni `host_permissions`.
+- Fenêtre (`popup.html` + `popup.css` + `popup.js`, aucun script en ligne, aucun gestionnaire `on…=` en ligne, aucune ressource distante, aucune police téléchargée) : largeur 340 px ; thème sombre proche du site (fond `#0f0f11`, texte `#f4f4f5`, texte secondaire `#a1a1aa`, accent vert menthe `#cdeee0`) ; police `system-ui` ; l'icône 48 px en tête. Textes exacts :
+  - Titre : `Doublons pour Wiki Masters`
+  - Chapeau : `Le site ne sait pas trier tes cartes en double. L'extension ajoute un choix « Doublons » dans le tri de ta collection.`
+  - Intertitre `Comment faire`, liste numérotée :
+    1. `Ouvre ta collection sur wiki-masters.com.`
+    2. `Dans le menu de tri, choisis « Doublons ».`
+    3. `La première fois, l'extension lit toute ta collection : compte environ 2 minutes pour 1 000 cartes, en gardant l'onglet visible. Ensuite, c'est immédiat.`
+  - Ligne vie privée : `Tes cartes restent dans ton navigateur : rien n'est envoyé ailleurs que sur wiki-masters.com.`
+  - Intertitre `Soutenir`, texte : `L'extension est gratuite et le restera. Si elle te rend service, tu peux m'offrir un café.` puis deux boutons-liens : `☕ Buy Me a Coffee` et `Laisser un pourboire` ; `target="_blank" rel="noopener noreferrer"`.
+  - Pied : `Extension non officielle, sans lien avec Wiki Masters.` puis `v<version> · Code source` (lien vers le dépôt).
+  - `popup.js` remplit seulement la version (`chrome.runtime.getManifest().version`), sans échouer hors extension.
+  - Liens provisoires, à remplacer avant publication (Task 9) : `https://buymeacoffee.com/A-REMPLACER`, `https://tip.md/A-REMPLACER`, `https://github.com/A-REMPLACER/wiki-masters-doublons`. Le marqueur `A-REMPLACER` ne doit apparaître **que** dans ces trois liens.
+- Accessibilité : contraste du texte ≥ 4,5:1 ; boutons atteignables au clavier, focus visible ; `lang="fr"`.
+
+- [ ] **Step 1: Tests qui échouent.**
+  - manifest : `icons` et `action.default_icon` pointent vers des fichiers qui existent ; chaque PNG a la bonne taille (lire largeur/hauteur dans l'IHDR) ; `action.default_popup` existe ; `description` exacte ; toujours aucune permission ; `minimum_chrome_version` conservé.
+  - icônes : `node tools/make-icons.js` relancé produit des octets identiques aux fichiers versionnés (déterminisme).
+  - popup : le HTML ne contient ni `<script>` en ligne (seulement `src="popup.js"`), ni attribut `on…=`, ni `http` hors des liens attendus ; contient les textes exacts ci-dessus ; les liens de soutien ont `target="_blank"` et `rel` avec `noopener` ; `A-REMPLACER` n'apparaît que dans les trois liens.
+- [ ] **Step 2: Les voir échouer** — `npm test`.
+- [ ] **Step 3: Implémenter** ; lancer `npm run icons` ; regarder les quatre PNG (les ouvrir) et ajuster le dessin jusqu'à ce que les deux cartes se lisent à 16 px.
+- [ ] **Step 4: Les voir passer** — `npm test` → tous PASS ; `node --check` sur les fichiers JS.
+- [ ] **Step 5: Commit** — `git commit -m "feat: icône et fenêtre de l'extension, liens de soutien"` (git add explicite).
+- [ ] **Step 6: Preuve dans le Chrome de Victor** — recharger l'extension : icône visible dans `chrome://extensions` et dans la barre (épinglée), fenêtre au clic, liens qui ouvrent un onglet, textes relus par Victor.
+
+---
+
 ### Task 9: Publication (fil principal, avec Victor)
 
 **Files:**
