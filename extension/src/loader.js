@@ -152,7 +152,7 @@
   }
 
   // Un seul appel à la fois, minGapMs entre la fin d'un appel et le début du suivant, délai maximal par appel.
-  function createSerialFetch({ fetchFn, minGapMs = 400, timeoutMs = 20000, sleep, now }) {
+  function createSerialFetch({ fetchFn, minGapMs = 400, timeoutMs = 20000, sleep, now, locks = null }) {
     let tail = Promise.resolve();
     let lastEnd = null;
     const abortError = () => Object.assign(new Error('Appel abandonné'), { name: 'AbortError' });
@@ -168,7 +168,31 @@
       });
     }
 
-    async function run(url, init) {
+    // Verrou partagé entre onglets (navigator.locks) : un seul appel de l'extension à la fois, tous onglets
+    // confondus. Le verrou reste tenu minGapMs après l'appel, ce qui espace aussi les onglets entre eux.
+    // L'attente du verrou s'interrompt dès que `signal` se déclenche.
+    async function withLock(signal, fn) {
+      if (!locks) return fn();
+      let release;
+      const held = new Promise((r) => { release = r; });
+      await new Promise((resolve, reject) => {
+        const opts = signal ? { signal } : {};
+        Promise.resolve(locks.request('wm-doublons:net', opts, () => { resolve(); return held; })).catch(reject);
+      });
+      try {
+        return await fn();
+      } finally {
+        Promise.resolve().then(() => sleep(minGapMs)).then(release, release);
+      }
+    }
+
+    function run(url, init) {
+      const caller = init?.signal;
+      if (caller?.aborted) return Promise.reject(abortError());
+      return withLock(caller, () => runLocked(url, init));
+    }
+
+    async function runLocked(url, init) {
       const caller = init?.signal;
       if (caller?.aborted) throw abortError();
       if (lastEnd !== null) {

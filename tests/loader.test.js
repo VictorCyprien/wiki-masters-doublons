@@ -394,3 +394,74 @@ test('loadNewEntries : un id vu sur deux pages (décalage) n\'est rendu qu\'une 
   const { entries } = await loadNewEntries({ ...e, knownIds: new Set(['k0']) });
   assert.deepEqual(entries.map((x) => x.id), ['n0', 'n1', 'n2']);
 });
+
+// ---- createSerialFetch : verrou partagé entre onglets ----
+
+function fakeLocks() {
+  const queues = new Map();
+  const L = {
+    requests: [],
+    request(name, opts, cb) {
+      L.requests.push(name);
+      const q = queues.get(name) || { held: false, waiting: [] };
+      queues.set(name, q);
+      return new Promise((resolve, reject) => {
+        const signal = opts?.signal;
+        const grant = async (entry) => {
+          q.held = true;
+          try { resolve(await cb()); } catch (e) { reject(e); } finally {
+            q.held = false;
+            const next = q.waiting.shift();
+            if (next) next();
+          }
+        };
+        if (signal?.aborted) return reject(Object.assign(new Error('abort'), { name: 'AbortError' }));
+        const entry = () => grant(entry);
+        if (!q.held) return void grant(entry);
+        q.waiting.push(entry);
+        signal?.addEventListener('abort', () => {
+          const i = q.waiting.indexOf(entry);
+          if (i >= 0) { q.waiting.splice(i, 1); reject(Object.assign(new Error('abort'), { name: 'AbortError' })); }
+        }, { once: true });
+      });
+    },
+  };
+  return L;
+}
+
+test('createSerialFetch : deux onglets (verrou partagé) ne lisent jamais en parallèle', async () => {
+  const st = serialEnv();
+  const locks = fakeLocks();
+  const a = createSerialFetch({ fetchFn: st.fetchFn, sleep: st.sleep, now: st.now, locks });
+  const b = createSerialFetch({ fetchFn: st.fetchFn, sleep: st.sleep, now: st.now, locks });
+  await Promise.all([a('/a1'), b('/b1'), a('/a2'), b('/b2')]);
+  assert.equal(st.maxActive, 1);
+  assert.equal(st.log.length, 4);
+  assert.ok(locks.requests.every((n) => n === 'wm-doublons:net'));
+  // l'écart de 400 ms vaut aussi entre onglets : le verrou est tenu 400 ms après l'appel
+  assert.ok(st.sleeps.filter((ms) => ms === 400).length >= 4);
+});
+
+test('createSerialFetch : abandon pendant l\'attente du verrou, immédiat et sans appel réseau', async () => {
+  const st = serialEnv();
+  const locks = fakeLocks();
+  // un autre onglet tient le verrou
+  let free;
+  locks.request('wm-doublons:net', {}, () => new Promise((r) => { free = r; }));
+  const f = createSerialFetch({ fetchFn: st.fetchFn, sleep: st.sleep, now: st.now, locks });
+  const c = new AbortController();
+  const p = f('/x', { signal: c.signal });
+  await new Promise((r) => setImmediate(r));
+  c.abort();
+  await assert.rejects(p, (err) => err.name === 'AbortError');
+  assert.equal(st.log.length, 0);
+  free();
+});
+
+test('createSerialFetch : sans navigator.locks, comportement inchangé', async () => {
+  const st = serialEnv();
+  const f = createSerialFetch({ fetchFn: st.fetchFn, sleep: st.sleep, now: st.now, locks: null });
+  await Promise.all([f('/a'), f('/b')]);
+  assert.equal(st.maxActive, 1);
+  assert.equal(st.log.length, 2);
+});

@@ -58,7 +58,10 @@
     }
 
     // --- Réseau : tout passe par le fetch d'origine, un appel à la fois ---
-    const serialFetch = W.createSerialFetch({ fetchFn: interceptor.originalFetch.bind(window), sleep: realSleep, now });
+    const serialFetch = W.createSerialFetch({
+      fetchFn: interceptor.originalFetch.bind(window), sleep: realSleep, now,
+      locks: typeof navigator !== 'undefined' && navigator.locks ? navigator.locks : null, // un flux à la fois, tous onglets confondus
+    });
     const readOpts = (signal) => ({ credentials: 'same-origin', signal });
     const loaderBase = { parseList: W.parseList, sleep: realSleep, now, log };
 
