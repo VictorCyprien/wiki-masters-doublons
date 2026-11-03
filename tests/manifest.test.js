@@ -36,3 +36,41 @@ test('src/mutations.js présent, avant src/controller.js', () => {
 test('Chrome 111 au minimum (world MAIN ignoré avant)', () => {
   assert.equal(manifest.minimum_chrome_version, '111');
 });
+
+test('icônes et action : fichiers présents, tailles PNG exactes', () => {
+  const size = (rel) => {
+    const b = fs.readFileSync(path.join(root, rel));
+    assert.equal(b.subarray(1, 4).toString(), 'PNG', rel);
+    return [b.readUInt32BE(16), b.readUInt32BE(20)];
+  };
+  assert.deepEqual(Object.keys(manifest.icons).sort(), ['128', '16', '32', '48']);
+  for (const [n, rel] of Object.entries(manifest.icons)) {
+    assert.deepEqual(size(rel), [Number(n), Number(n)], rel);
+  }
+  assert.deepEqual(Object.keys(manifest.action.default_icon).sort(), ['16', '32']);
+  for (const [n, rel] of Object.entries(manifest.action.default_icon)) {
+    assert.deepEqual(size(rel), [Number(n), Number(n)], rel);
+  }
+  assert.equal(manifest.action.default_title, 'Doublons pour Wiki Masters');
+  assert.ok(fs.existsSync(path.join(root, manifest.action.default_popup)));
+});
+
+test('description exacte', () => {
+  assert.equal(
+    manifest.description,
+    'Trouve tes cartes en double sur Wiki Masters : un choix « Doublons » apparaît dans le tri de ta collection.'
+  );
+});
+
+test('icônes : make-icons.js est déterministe et reproduit les fichiers versionnés', () => {
+  const { execFileSync } = require('node:child_process');
+  const script = path.join(__dirname, '..', 'tools', 'make-icons.js');
+  const before = {};
+  for (const n of [16, 32, 48, 128]) {
+    before[n] = fs.readFileSync(path.join(root, 'icons', `icon-${n}.png`));
+  }
+  execFileSync(process.execPath, [script]);
+  for (const n of [16, 32, 48, 128]) {
+    assert.ok(before[n].equals(fs.readFileSync(path.join(root, 'icons', `icon-${n}.png`))), `icon-${n}`);
+  }
+});
