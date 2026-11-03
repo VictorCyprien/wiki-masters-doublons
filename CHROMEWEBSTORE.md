@@ -63,10 +63,10 @@ Français
 | Asset | Dimensions | Status | Filename |
 |-------|-----------|--------|----------|
 | Store Icon [REQUIRED] | 128×128 PNG | ✅ Ready | extension/icons/icon-128.png |
-| Screenshot 1 [REQUIRED] | 1280×800 | ⬜ Not created (Victor) | |
-| Screenshot 2 [RECOMMENDED] | 1280×800 | ⬜ Not created (Victor) | |
-| Screenshot 3 [RECOMMENDED] | 1280×800 | ⬜ Not created (Victor) | |
-| Small Promo Tile [RECOMMENDED] | 440×280 | ⬜ Not created | |
+| Screenshot 1 [REQUIRED] | 1280×800 | ✅ Ready | store/screenshot-1-doublons.png |
+| Screenshot 2 [RECOMMENDED] | 1280×800 | ✅ Ready | store/screenshot-2-tri.png |
+| Screenshot 3 [RECOMMENDED] | 1280×800 | ✅ Ready | store/screenshot-3-fenetre.png |
+| Small Promo Tile [RECOMMENDED] | 440×280 | ✅ Ready | store/promo-440x280.png |
 
 ### Screenshot Notes
 
