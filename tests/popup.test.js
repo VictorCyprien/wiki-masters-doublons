@@ -10,7 +10,7 @@ const html = fs.readFileSync(path.join(dir, 'popup.html'), 'utf8');
 const LINKS = [
   'https://buymeacoffee.com/victorcyprien',
   'https://www.tip.md/VictorCyprien',
-  'https://github.com/A-REMPLACER/wiki-masters-doublons',
+  'https://github.com/VictorCyprien/wiki-master-doublons',
 ];
 
 test('aucun script en ligne, aucun gestionnaire on…=', () => {
@@ -26,11 +26,9 @@ test('http seulement dans les trois liens attendus', () => {
   assert.doesNotMatch(fs.readFileSync(path.join(dir, 'popup.css'), 'utf8'), /https?:|@import|url\(\s*['"]?(?!\.\.\/icons)/);
 });
 
-test('A-REMPLACER seulement dans le lien GitHub', () => {
-  const stripped = html.replace(/href="[^"]*A-REMPLACER[^"]*"/g, '');
-  assert.doesNotMatch(stripped, /A-REMPLACER/);
-  assert.equal((html.match(/A-REMPLACER/g) || []).length, 1);
-  assert.match(html, /href="https:\/\/github\.com\/A-REMPLACER\/wiki-masters-doublons"/);
+test('plus aucun lien provisoire ; le lien du code va au dépôt', () => {
+  assert.doesNotMatch(html, /A-REMPLACER/);
+  assert.match(html, /href="https:\/\/github\.com\/VictorCyprien\/wiki-master-doublons"/);
 });
 
 test('textes exacts', () => {

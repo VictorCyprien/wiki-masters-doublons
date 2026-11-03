@@ -61,4 +61,4 @@ L'extension est gratuite et le restera. Si elle te rend service, tu peux m'offri
 
 ## Un souci, une idée
 
-Ouvre une « issue » sur [le dépôt](https://github.com/A-REMPLACER/wiki-masters-doublons/issues).
+Ouvre une « issue » sur [le dépôt](https://github.com/VictorCyprien/wiki-master-doublons/issues).

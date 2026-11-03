@@ -48,4 +48,4 @@ Si la façon de traiter les données change, cette page sera mise à jour avant 
 
 ## Contact
 
-Une question sur la vie privée : ouvre une issue sur https://github.com/A-REMPLACER/wiki-masters-doublons/issues
+Une question sur la vie privée : ouvre une issue sur https://github.com/VictorCyprien/wiki-master-doublons/issues

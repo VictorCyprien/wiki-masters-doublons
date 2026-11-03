@@ -41,7 +41,7 @@ Chrome affiche « Lire et modifier tes données sur wiki-masters.com ». C'est n
 • Fonctionne avec Chrome 111 ou plus.
 
 SUPPORT
-Un souci, une idée ? Ouvre une issue : https://github.com/A-REMPLACER/wiki-masters-doublons/issues
+Un souci, une idée ? Ouvre une issue : https://github.com/VictorCyprien/wiki-master-doublons/issues
 L'extension est gratuite. Si elle te rend service, tu peux m'offrir un café depuis sa fenêtre.
 
 Version 1.0.0 : première version.
@@ -114,7 +114,7 @@ L'extension ne déclare **aucune** entrée `permissions` ni `host_permissions` d
 
 **Privacy Policy URL**
 
-https://github.com/A-REMPLACER/wiki-masters-doublons/blob/main/PRIVACY.md
+https://github.com/VictorCyprien/wiki-master-doublons/blob/main/PRIVACY.md
 
 (doit être en ligne et accessible avant la soumission)
 
@@ -129,9 +129,9 @@ https://github.com/A-REMPLACER/wiki-masters-doublons/blob/main/PRIVACY.md
 
 **Contact Email**: à compléter par Victor (affiché publiquement ; doit être surveillé)
 
-**Support URL**: https://github.com/A-REMPLACER/wiki-masters-doublons/issues
+**Support URL**: https://github.com/VictorCyprien/wiki-master-doublons/issues
 
-**Homepage URL**: https://github.com/A-REMPLACER/wiki-masters-doublons
+**Homepage URL**: https://github.com/VictorCyprien/wiki-master-doublons
 
 ## Version History
 
