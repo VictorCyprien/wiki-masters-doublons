@@ -112,6 +112,7 @@
     function noRemoval(partial, f) {
       const was = partial.rarityCounts;
       if (typeof partial.total !== 'number' || !was || typeof was !== 'object') return false;
+      if (partial.newest === undefined) return false; // ancien format : sans repère d'ajouts
       if (typeof f.total !== 'number' || f.total < partial.total) return false;
       const now_ = f.template?.rarityCounts ?? {};
       return Object.keys(was).every((r) => (now_[r] ?? 0) >= was[r]);
@@ -162,13 +163,15 @@
       const partial = await loadPartial(mine, uid0, pageCount, f);
       const startPage = partial ? partial.nextPage : 0;
       const initialEntries = partial ? partial.entries : [];
+      // Base des ajouts/retraits : la fraîcheur de départ, ou celle du partiel en reprise.
+      const base = partial ? { total: partial.total, newest: partial.newest } : { total: f.total, newest: f.newest ?? null };
       setState({ mode: 'loading', error: null, resumeAt: null, progress: { phase: 'full', pagesRead: startPage, pageCount, retryInMs: null } });
       const signal = ctrl.signal;
       const onProgress = progressFn(mine, 'full');
       let latest = initialEntries; // entrées lues jusqu'ici (référence du chargeur)
       let writes = Promise.resolve(); // sauvegardes en file : une à la fois, et avant tout effacement
       const save = (entries, nextPage) => {
-        const snapshot = { entries: entries.slice(), nextPage, pageCount, savedAt: now(), total: f.total, rarityCounts: { ...(f.template?.rarityCounts ?? {}) } };
+        const snapshot = { entries: entries.slice(), nextPage, pageCount, savedAt: now(), total: f.total, newest: base.newest, rarityCounts: { ...(f.template?.rarityCounts ?? {}) } };
         writes = writes.then(() => {
           if (gen !== mine) return undefined;
           return queued(() => { replay(snapshot); return cache.putPartial(uid0, snapshot); });
@@ -193,7 +196,7 @@
             let saved = false;
             try {
               const snap = {
-                entries: latest.slice(), nextPage: err.page, pageCount, savedAt: now(), total: f.total,
+                entries: latest.slice(), nextPage: err.page, pageCount, savedAt: now(), total: f.total, newest: base.newest,
                 rarityCounts: { ...(f.template?.rarityCounts ?? {}) },
               };
               await step(mine, queued(() => { replay(snap); return cache.putPartial(uid0, snap); }));
@@ -219,8 +222,20 @@
       const sameUser = f.userId == null || f2.userId == null || f.userId === f2.userId;
       // Une carte retirée pendant la lecture décale la pagination (une entrée peut être sautée alors que
       // le total concorde) : toute baisse depuis le début de la lecture est un mismatch.
-      const removed = !noRemoval({ total: f.total, rarityCounts: f.template?.rarityCounts ?? {} }, f2);
-      if (!sameUser || removed || merged.length !== f2.total || !raritiesMatch(merged, f2.template)) {
+      let reason = null;
+      if (!sameUser) reason = 'user';
+      else if (!noRemoval({ total: f.total, newest: null, rarityCounts: f.template?.rarityCounts ?? {} }, f2)) reason = 'removal';
+      else if (merged.length !== f2.total) reason = 'total';
+      else if (!raritiesMatch(merged, f2.template)) reason = 'rarity';
+      else if (typeof base.newest === 'number') {
+        // Un retrait compensé par un ajout qui se trie après le curseur laisse total et raretés intacts.
+        // Hypothèse non vérifiée : une carte reçue (paquet, échange) a un `obtained_at` neuf.
+        let added = 0;
+        for (const e of merged) if (Date.parse(e.obtained_at) > base.newest) added += 1;
+        if (base.total + added - f2.total > 0) reason = 'masked';
+      }
+      if (reason) {
+        log('load:mismatch', { reason });
         await step(mine, writes);
         await dropPartial(mine, uid0);
         throw mkError('mismatch');

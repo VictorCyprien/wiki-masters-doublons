@@ -175,10 +175,18 @@
       if (!locks) return fn();
       let release;
       const held = new Promise((r) => { release = r; });
-      await new Promise((resolve, reject) => {
-        const opts = signal ? { signal } : {};
-        Promise.resolve(locks.request('wm-doublons:net', opts, () => { resolve(); return held; })).catch(reject);
-      });
+      let got;
+      try {
+        got = await new Promise((resolve, reject) => {
+          const opts = signal ? { signal } : {};
+          Promise.resolve(locks.request('wm-doublons:net', opts, () => { resolve(true); return held; })).catch(reject);
+        });
+      } catch (err) {
+        // Un abandon reste un abandon ; verrou indisponible (ex. SecurityError) : on appelle sans verrou.
+        if (err?.name === 'AbortError' || signal?.aborted) throw err;
+        return fn();
+      }
+      if (!got) return fn();
       try {
         return await fn();
       } finally {

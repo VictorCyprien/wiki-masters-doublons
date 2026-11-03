@@ -6,7 +6,7 @@
     PAGE_SIZE: 50,
     LOAD_SORT: 'rarity',
     DATE_SORT: 'added',
-    FRESHNESS_URL: '/api/my-collection?sort=rarity&page=0&stats=1',
+    FRESHNESS_URL: '/api/my-collection?sort=added&page=0&stats=1',
   });
 
   const SITE_ORIGIN = 'https://www.wiki-masters.com';
@@ -69,9 +69,16 @@
     const counts = json.rarityCounts ?? {};
     const sorted = Object.fromEntries(Object.entries(counts).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
     const total = json.total ?? null;
+    // Entrée la plus récente (tri « Date d'ajout », plus récentes d'abord) : repère des ajouts d'une lecture.
+    let newest = null;
+    for (const e of parseList(json)) {
+      const t = Date.parse(e?.obtained_at);
+      if (Number.isFinite(t) && (newest === null || t > newest)) newest = t;
+    }
     return {
       userId: parseList(json)[0]?.user_id ?? null,
       total,
+      newest,
       freshness: total + '|' + JSON.stringify(sorted),
       template: json,
     };

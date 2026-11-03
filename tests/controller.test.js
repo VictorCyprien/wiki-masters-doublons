@@ -585,7 +585,7 @@ test('reprise de plus de 24 h : ignorée, départ à 0', async () => {
 
 test('reprise de 24 h pile : acceptée ; enter() sans enregistrement reprend automatiquement', async () => {
   const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: 500 }) });
-  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242 - 24 * 3600 * 1000, total: 500, rarityCounts: {} });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242 - 24 * 3600 * 1000, total: 500, newest: null, rarityCounts: {} });
   await c.enter();
   assert.equal(calls.loadAll[0].startPage, 3);
   assert.equal(calls.loadAll[0].initialEntries.length, 150);
@@ -689,7 +689,7 @@ test('reprise : une rareté en baisse compensée par un ajout (total égal) est 
 
 test('reprise : de purs ajouts (total et rareté en hausse) gardent le partiel', async () => {
   const { c, cache, calls } = setup({ fetchFreshness: async () => withRarity(502, { C: 301, R: 200, E: 1 }) });
-  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 11, savedAt: 4242, total: 500, rarityCounts: { C: 300, R: 200 } });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 11, savedAt: 4242, total: 500, newest: null, rarityCounts: { C: 300, R: 200 } });
   await c.enter();
   assert.equal(calls.loadAll[0].startPage, 3);
   assert.equal(calls.loadAll[0].initialEntries.length, 150);
@@ -1075,7 +1075,7 @@ function fakeServer(entries) {
       return src.slice(p * 50, p * 50 + 50);
     },
     freshness() {
-      return siteApi.readFreshness({ collection: rows.slice(0, 50), total: rows.length, rarityCounts: counts(), tagOptions: [] });
+      return siteApi.readFreshness({ collection: this.page(0, 'added'), total: rows.length, rarityCounts: counts(), tagOptions: [] });
     },
   };
 }
@@ -1235,4 +1235,103 @@ test('pageCounts vaut null quand rien n\'est servi (erreur sans enregistrement)'
   await c.enter();
   assert.equal(c.getState().mode, 'error');
   assert.equal(c.getState().pageCounts, null);
+});
+
+// ---- Retrait masqué par un ajout pendant une lecture complète ; motif du mismatch ----
+
+const D_OLD = '2026-11-01T00:00:00+00:00';
+const D_NEW = '2026-11-02T00:00:00+00:00';
+const oldEntries = (n) => Array.from({ length: n }, (_, i) => makeEntry({ id: `e${i}`, title: i === 120 || i === 100 ? 'Dup' : `t${i}`, obtainedAt: D_OLD }));
+const newCard = (id) => makeEntry({ id, title: id, obtainedAt: D_NEW });
+
+test('échange même rareté pendant la lecture (retrait + ajout trié après le curseur) : error incomplete', async () => {
+  const srv = fakeServer(oldEntries(200));
+  const logs = [];
+  let once = false;
+  const { c, cache } = realSetup(srv, (page, sort) => {
+    if (sort === 'rarity' && page === 0 && !once) { once = true; srv.remove('e10'); srv.set([...srv.rows(), newCard('Z')]); }
+  }, { log: (ev, d) => logs.push([ev, d]) });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('user-A'), null);
+  assert.deepEqual(logs.filter(([e]) => e === 'load:mismatch'), [['load:mismatch', { reason: 'masked' }]]);
+});
+
+test('paquet ouvert pendant la lecture (ajouts seuls, plus récents) : ready', async () => {
+  const srv = fakeServer(oldEntries(200));
+  let once = false;
+  const { c, cache } = realSetup(srv, (page, sort) => {
+    if (sort === 'rarity' && page === 0 && !once) { once = true; srv.set([...srv.rows(), newCard('Z1'), newCard('Z2')]); }
+  });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('user-A')).entries.length, 202);
+});
+
+test('fraîcheur sans entrée lisible (newest null) : seuls les contrôles actuels, l\'échange passe', async () => {
+  const srv = fakeServer(oldEntries(200));
+  let once = false;
+  const { c } = realSetup(srv, (page, sort) => {
+    if (sort === 'rarity' && page === 0 && !once) { once = true; srv.remove('e10'); srv.set([...srv.rows(), newCard('Z')]); }
+  }, { fetchFreshness: async () => ({ ...srv.freshness(), newest: null }) });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+});
+
+test('reprise : partiel avec newest, retrait masqué entre la sauvegarde et la fin -> mismatch', async () => {
+  const entries = oldEntries(200);
+  const srv = fakeServer(entries);
+  const fr = srv.freshness();
+  const logs = [];
+  let once = false;
+  const { c, cache } = realSetup(srv, (page, sort) => {
+    if (sort === 'rarity' && page === 1 && !once) { once = true; srv.remove('e10'); srv.set([...srv.rows(), newCard('Z')]); }
+  }, { fetchFreshness: async () => fr, log: (ev, d) => logs.push([ev, d]) });
+  await cache.putPartial('user-A', { entries: entries.slice(0, 50), nextPage: 1, pageCount: 4, savedAt: 4242,
+    total: 200, newest: Date.parse(D_OLD), rarityCounts: { C: 200 } });
+  await c.enter();
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('user-A'), null);
+  assert.ok(logs.some(([e, d]) => e === 'load:mismatch' && d.reason === 'masked'));
+});
+
+test('reprise : partiel sans newest numérique (ancien format) -> écarté, lecture depuis la page 0', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: 500, newest: 1 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242, total: 500, rarityCounts: {} });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('les instantanés partiels gardent newest', async () => {
+  const entries = ents(500);
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 500, newest: 123 }),
+    loadAll: async (o) => {
+      o.onPage({ page: 9, entries: entries.slice(0, 500) });
+      await tick(); await tick();
+      throw Object.assign(new L.IncompleteLoadError({ reason: 'http', page: 12 }), {});
+    },
+    IncompleteLoadError: L.IncompleteLoadError,
+  });
+  await c.enter();
+  assert.equal((await cache.getPartial('u1')).newest, 123);
+});
+
+test('motif du mismatch journalisé : removal, total, rarity', async () => {
+  const run = async (over, load) => {
+    const logs = [];
+    const entries = ents(5);
+    const { c } = setup({
+      log: (ev, d) => logs.push([ev, d]), IncompleteLoadError: L.IncompleteLoadError,
+      loadAll: async () => ({ entries: entries.slice(0, 4) }), loadNew: async () => ({ entries: [entries[4]] }), ...over,
+    });
+    await c.enter();
+    return logs.filter(([e]) => e === 'load:mismatch').map(([, d]) => d);
+  };
+  assert.deepEqual(await run({ fetchFreshness: async () => fresh({ total: 13522 }) }), [{ reason: 'total' }]);
+  assert.deepEqual(await run({ fetchFreshness: async () => fresh({ total: 5, template: { collection: [], tagOptions: [], rarityCounts: { R: 5 } } }) }), [{ reason: 'rarity' }]);
+  let n = 0;
+  assert.deepEqual(await run({ fetchFreshness: async () => (n++ === 0 ? fresh({ total: 6 }) : fresh({ total: 5 })) }), [{ reason: 'removal' }]);
 });

@@ -465,3 +465,30 @@ test('createSerialFetch : sans navigator.locks, comportement inchangé', async (
   assert.equal(st.maxActive, 1);
   assert.equal(st.log.length, 2);
 });
+
+test('createSerialFetch : verrou indisponible (SecurityError) -> appel sans verrou', async () => {
+  const st = serialEnv();
+  const locks = { request: async () => { throw Object.assign(new Error('denied'), { name: 'SecurityError' }); } };
+  const f = createSerialFetch({ fetchFn: st.fetchFn, sleep: st.sleep, now: st.now, locks });
+  await f('/a');
+  await f('/b');
+  assert.equal(st.log.length, 2);
+  assert.equal(st.maxActive, 1);
+});
+
+test('createSerialFetch : verrou qui rejette de façon synchrone -> appel sans verrou', async () => {
+  const st = serialEnv();
+  const locks = { request: () => { throw Object.assign(new Error('denied'), { name: 'SecurityError' }); } };
+  const f = createSerialFetch({ fetchFn: st.fetchFn, sleep: st.sleep, now: st.now, locks });
+  await f('/a');
+  assert.equal(st.log.length, 1);
+});
+
+test('createSerialFetch : un abandon reste un abandon même si le verrou est cassé', async () => {
+  const st = serialEnv();
+  const c = new AbortController();
+  const locks = { request: async () => { c.abort(); throw Object.assign(new Error('abort'), { name: 'AbortError' }); } };
+  const f = createSerialFetch({ fetchFn: st.fetchFn, sleep: st.sleep, now: st.now, locks });
+  await assert.rejects(f('/x', { signal: c.signal }), (err) => err.name === 'AbortError');
+  assert.equal(st.log.length, 0);
+});

@@ -95,3 +95,24 @@ test('fetchFreshness', async () => {
   assert.equal(r.total, 13522);
   await assert.rejects(fetchFreshness(async () => ({ ok: false, status: 500, json: async () => ({}) })));
 });
+
+test('FRESHNESS_URL : tri « Date d\'ajout », page 0, stats', () => {
+  assert.equal(SITE.FRESHNESS_URL, '/api/my-collection?sort=added&page=0&stats=1');
+});
+
+test('readFreshness : newest = plus grand obtained_at (ms), template inchangé', () => {
+  const r = readFreshness(page0Stats1);
+  assert.equal(r.newest, Date.parse('2026-11-02T11:46:45.895091+00:00'));
+  assert.equal(r.template, page0Stats1);
+  const mixed = readFreshness({ collection: [
+    makeEntry({ obtainedAt: '2026-10-01T00:00:00+00:00' }), makeEntry({ obtainedAt: '2026-11-01T00:00:00+00:00' }),
+    makeEntry({ obtainedAt: 'pas une date' }),
+  ], total: 3, rarityCounts: {} });
+  assert.equal(mixed.newest, Date.parse('2026-11-01T00:00:00+00:00'));
+});
+
+test('readFreshness : aucune entrée lisible -> newest null', () => {
+  assert.equal(readFreshness({ collection: [], total: 0, rarityCounts: {} }).newest, null);
+  assert.equal(readFreshness({ total: 3 }).newest, null);
+  assert.equal(readFreshness({ collection: [{ obtained_at: 'x' }, {}], total: 2 }).newest, null);
+});
