@@ -25,7 +25,7 @@ Uniquement à trouver tes doublons, à les afficher et à retrouver ta collectio
 - Aucune donnée n'est vendue, partagée ni utilisée pour autre chose que le fonctionnement de l'extension.
 - Pas de statistiques d'usage, pas de publicité, pas de suivi, pas de service tiers.
 - Pas de code chargé depuis Internet.
-- L'extension ne demande aucune permission du navigateur.
+- L'extension ne demande aucune permission du navigateur. Elle ne s'exécute que sur les pages de wiki-masters.com.
 
 ## Journal de débogage
 
@@ -37,7 +37,10 @@ La fenêtre qui s'ouvre au clic sur l'icône contient deux liens de soutien (Buy
 
 ## Conserver, effacer
 
-La copie locale reste dans ton navigateur jusqu'à ce que tu l'effaces. Pour la supprimer : supprime l'extension, ou efface les données du site wiki-masters.com dans les paramètres de Chrome (Confidentialité et sécurité, Paramètres des sites, Afficher les autorisations et données stockées sur les sites).
+La copie locale reste dans ton navigateur jusqu'à ce que tu l'effaces. Elle est rangée avec les données du site wiki-masters.com : **supprimer l'extension ne l'efface pas**. Pour la supprimer :
+
+- la plus ciblée : sur wiki-masters.com, ouvre les outils de développement (F12), onglet « Application », rubrique « IndexedDB », et supprime la base `wm-doublons` ;
+- ou efface les données du site wiki-masters.com dans les paramètres de Chrome (Confidentialité et sécurité, Paramètres des sites, Afficher les autorisations et données stockées sur les sites). Attention : cela te déconnecte aussi du site.
 
 ## Changements
 
