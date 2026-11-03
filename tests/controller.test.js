@@ -3,7 +3,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const siteApi = require('../extension/src/site-api.js');
 const dupApi = require('../extension/src/duplicates.js');
-const { IncompleteLoadError, AbortedLoadError } = require('../extension/src/loader.js');
+const L = require('../extension/src/loader.js');
+const { IncompleteLoadError, AbortedLoadError } = L;
 const { memoryStore, createCache } = require('../extension/src/cache.js');
 const { makeEntry } = require('./helpers.js');
 const { createController } = require('../extension/src/controller.js');
@@ -1059,4 +1060,137 @@ test('partiel effacé au mismatch : une mutation en file ne le fait pas revenir'
   await p;
   await m;
   assert.equal(await base.getPartial('u1'), null);
+});
+
+// ---- Relecture finale : lecture avec le vrai chargeur contre un faux serveur ----
+
+function fakeServer(entries) {
+  let rows = entries.slice();
+  const counts = () => rows.reduce((a, e) => ((a[e.card.rarity] = (a[e.card.rarity] || 0) + 1), a), {});
+  return {
+    set(r) { rows = r; },
+    remove(id) { rows = rows.filter((e) => e.id !== id); },
+    rows: () => rows,
+    page(p, sort) {
+      const src = sort === 'added' ? rows.slice().sort((a, b) => (a.obtained_at < b.obtained_at ? 1 : -1)) : rows;
+      return src.slice(p * 50, p * 50 + 50);
+    },
+    freshness() {
+      return siteApi.readFreshness({ collection: rows.slice(0, 50), total: rows.length, rarityCounts: counts(), tagOptions: [] });
+    },
+  };
+}
+
+function realSetup(srv, onFetch = () => {}, over = {}) {
+  const base = { parseList: siteApi.parseList, sleep: async () => {}, now: () => 0, log: () => {} };
+  const fetchPage = (sort) => async (page) => {
+    const list = srv.page(page, sort);
+    onFetch(page, sort);
+    return { ok: true, status: 200, json: async () => ({ collection: list }), headers: { get: () => null } };
+  };
+  return setup({
+    fetchFreshness: async () => srv.freshness(),
+    IncompleteLoadError: L.IncompleteLoadError,
+    loadAll: (o) => L.loadAllPages({ ...base, ...o, fetchPage: fetchPage('rarity') }),
+    loadNew: (o) => L.loadNewEntries({ ...base, ...o, fetchPage: fetchPage('added') }),
+    ...over,
+  });
+}
+
+test('carte retirée pendant la lecture complète : lecture incomplète, rien en cache', async () => {
+  const entries = Array.from({ length: 200 }, (_, i) => makeEntry({ id: `e${i}`, title: i === 120 || i === 100 ? 'Dup' : `t${i}` }));
+  const srv = fakeServer(entries);
+  const { c, cache } = realSetup(srv, (page, sort) => { if (sort === 'rarity' && page === 1) srv.remove('e10'); });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('user-A'), null);
+  assert.equal(await cache.getPartial('user-A'), null);
+});
+
+test('reprise : une carte retirée depuis la sauvegarde du partiel invalide le partiel', async () => {
+  const entries = ents(150);
+  const srv = fakeServer(entries.slice(1)); // 149 : e0 a été retirée depuis la sauvegarde
+  const fr = srv.freshness();
+  const { c, cache, calls } = realSetup(srv, () => {}, { fetchFreshness: async () => fr });
+  await cache.putPartial('user-A', { entries: entries.slice(0, 50), nextPage: 1, pageCount: 3, savedAt: 4242, total: 150, rarityCounts: { C: 150 } });
+  await c.enter();
+  assert.equal(await cache.getPartial('user-A'), null);
+  assert.equal(c.getState().mode, 'ready'); // relu depuis la page 0
+});
+
+test('lecture complète : total égal mais comptes par rareté différents -> mismatch', async () => {
+  const e = ents(4);
+  e[3].card.rarity = 'R';
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 4, template: { collection: [], tagOptions: [], rarityCounts: { C: 4 } } }),
+    loadAll: async () => ({ entries: e.slice(0, 3) }),
+    loadNew: async () => ({ entries: [e[3]] }),
+  });
+  await c.enter();
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('u1'), null);
+});
+
+test('rafraîchissement incrémental : total égal mais comptes par rareté différents -> lecture complète', async () => {
+  const known = ents(3, 'k');
+  const added = makeEntry({ id: 'n0', title: 'n0' });
+  const truth = [makeEntry({ id: 't0', title: 't0' }), makeEntry({ id: 't1', title: 't1' }),
+    makeEntry({ id: 't2', title: 't2', rarity: 'R' }), makeEntry({ id: 't3', title: 't3', rarity: 'R' })];
+  let tpl = { collection: [], tagOptions: [], rarityCounts: { C: 3 } };
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: tpl.rarityCounts.C + (tpl.rarityCounts.R ?? 0), template: tpl }),
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: truth }; },
+    loadNew: async () => ({ entries: calls.loadNew.push(1) === 1 ? [added] : [] }),
+  });
+  await cache.put('u1', { entries: known.slice(), total: 3, freshness: 'old', template: tpl, loadedAt: 1 });
+  await c.enter();
+  tpl = { collection: [], tagOptions: [], rarityCounts: { C: 2, R: 2 } }; // total 4, mais ni C:4 ni les 3 C connus + 1
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 1);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('u1')).entries.length, 4);
+  assert.deepEqual((await cache.get('u1')).entries.map((e) => e.id), ['t0', 't1', 't2', 't3']);
+});
+
+test('rafraîchissement incrémental : total concordant et raretés concordantes -> fusion sans lecture complète', async () => {
+  const known = ents(3, 'k');
+  const added = makeEntry({ id: 'n0', title: 'n0' });
+  const tpl = { collection: [], tagOptions: [], rarityCounts: { C: 4 } };
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 4, template: tpl }),
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: [] }; },
+    loadNew: async () => ({ entries: [added] }),
+  });
+  await cache.put('u1', { entries: known.slice(), total: 3, freshness: 'old', template: tpl, loadedAt: 1 });
+  await c.enter();
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('u1')).entries.length, 4);
+});
+
+test('rafraîchissement : carte ajoutée entre deux pages de loadNew, aucun doublon fantôme servi', async () => {
+  const at = (sec) => new Date(Date.UTC(2026, 10, 1) + sec * 1000).toISOString();
+  const known = Array.from({ length: 100 }, (_, i) => makeEntry({ id: `k${i}`, title: `k${i}`, obtainedAt: at(-1000 - i) }));
+  let added = Array.from({ length: 60 }, (_, i) => makeEntry({ id: `n${i}`, title: `n${i}`, obtainedAt: at(-i) }));
+  const srv = fakeServer([]);
+  srv.set([...added, ...known]);
+  const shift = (page, sort) => {
+    if (sort === 'added' && page === 0 && added.length === 60) {
+      added = [makeEntry({ id: 'NEW', title: 'NEW', obtainedAt: at(10) }), ...added];
+      srv.set([...added, ...known]);
+    }
+  };
+  const { c, cache } = realSetup(srv, shift);
+  await cache.put('user-A', { entries: known.slice(), total: 100, freshness: 'old', template: { tagOptions: [] }, loadedAt: 0 });
+  await cache.setLastUserId('user-A');
+  await c.enter();
+  await c.refresh();
+  const ids = (await cache.get('user-A')).entries.map((e) => e.id);
+  assert.equal(new Set(ids).size, ids.length);
+  if (c.getState().mode === 'ready' && !c.getState().error) {
+    const stats = c.respond('/api/my-collection/stats?sort=rarity');
+    assert.equal(stats.total, 0); // aucun doublon dans ces données : pas de ×2 fantôme
+  }
 });

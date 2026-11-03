@@ -117,6 +117,15 @@
       return Object.keys(was).every((r) => (now_[r] ?? 0) >= was[r]);
     }
 
+    // Comptes par rareté des entrées = ceux du site (quand le site les donne ; sinon rien à comparer).
+    function raritiesMatch(entries, template) {
+      const rc = template?.rarityCounts;
+      if (!rc || typeof rc !== 'object' || Object.keys(rc).length === 0) return true;
+      const got = {};
+      for (const e of entries) got[e.card?.rarity] = (got[e.card?.rarity] || 0) + 1;
+      return [...new Set([...Object.keys(rc), ...Object.keys(got)])].every((r) => (got[r] ?? 0) === (rc[r] ?? 0));
+    }
+
     // Lecture reprise d'un enregistrement partiel valide (moins de 24 h, page encore à lire), sinon null.
     async function loadPartial(mine, uid, pageCount, f) {
       if (uid == null) return null;
@@ -206,7 +215,10 @@
       const merged = [...extra.entries, ...entries];
       const f2 = await strictFresh(mine);
       const sameUser = f.userId == null || f2.userId == null || f.userId === f2.userId;
-      if (!sameUser || merged.length !== f2.total) {
+      // Une carte retirée pendant la lecture décale la pagination (une entrée peut être sautée alors que
+      // le total concorde) : toute baisse depuis le début de la lecture est un mismatch.
+      const removed = !noRemoval({ total: f.total, rarityCounts: f.template?.rarityCounts ?? {} }, f2);
+      if (!sameUser || removed || merged.length !== f2.total || !raritiesMatch(merged, f2.template)) {
         await step(mine, writes);
         await dropPartial(mine, uid0);
         throw mkError('mismatch');
@@ -308,7 +320,7 @@
         await fullRead(mine, f);
         return;
       }
-      if (merged.length === f.total) {
+      if (merged.length === f.total && raritiesMatch(merged, f.template)) {
         log('refresh:incremental');
         const rec = { entries: merged, total: f.total, freshness: f.freshness, template: f.template, loadedAt: now() };
         const uid = f.userId ?? recordUserId;

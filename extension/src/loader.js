@@ -91,7 +91,11 @@
         if (page > o.startPage) await pause(o.delayMs, o);
         const list = await readPage(page, o);
         o.onProgress({ pagesRead: page + 1, pageCount: o.pageCount ?? null });
-        if (list.length === 0) return onEnd(o, 'empty');
+        if (list.length === 0) {
+          // page vide alors qu'il en reste à lire : lecture incomplète (reprise possible), pas une fin
+          if (o.pageCount !== null && o.pageCount !== undefined && page < o.pageCount) throw new IncompleteLoadError({ reason: 'empty-page', page });
+          return onEnd(o, 'empty');
+        }
         if (visit(list, page)) return onEnd(o, 'known');
       }
       return onEnd(o, 'end');
@@ -127,11 +131,15 @@
   async function loadNewEntries(opts) {
     const { knownIds, maxPages = 20 } = opts;
     const entries = [];
+    const seen = new Set(); // une carte ajoutée en cours de lecture décale les pages : un id peut revenir
     let sawKnown = false;
     return readPages({ ...opts, pageCount: null, startPage: 0 }, maxPages, (list) => {
       for (const e of list) {
         if (knownIds.has(e.id)) sawKnown = true;
-        else entries.push(e);
+        else if (!seen.has(e.id)) {
+          seen.add(e.id);
+          entries.push(e);
+        }
       }
       return sawKnown;
     }, (o, why) => {

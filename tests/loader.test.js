@@ -55,12 +55,10 @@ test('loadAllPages lit tout, poliment, avec progression', async () => {
   assert.deepEqual(progress, [1, 2, 3].map((pagesRead) => ({ pagesRead, pageCount: 3 })));
 });
 
-test('page vide : arrêt anticipé, puis mismatch si le total attendu diffère', async () => {
+test('page vide avant pageCount : lecture incomplète empty-page (reprise possible)', async () => {
   const pages = () => [ok(range(0, 50)), ok(range(50, 100)), ok([])];
-  const e = env(pages());
-  const r = await loadAllPages({ ...e, pageCount: 3, expectedTotal: 100 });
-  assert.equal(r.entries.length, 100);
-  await rejectsWith(loadAllPages({ ...env(pages()), pageCount: 3, expectedTotal: 150 }), { name: 'IncompleteLoadError', reason: 'mismatch' });
+  await rejectsWith(loadAllPages({ ...env(pages()), pageCount: 3, expectedTotal: 100 }), { name: 'IncompleteLoadError', reason: 'empty-page', page: 2 });
+  await rejectsWith(loadAllPages({ ...env(pages()), pageCount: 3, expectedTotal: null }), { reason: 'empty-page', page: 2 });
 });
 
 test('expectedTotal null : aucun contrôle', async () => {
@@ -389,4 +387,10 @@ test('onRetry annonce l\'attente réelle (plancher de 400 ms) et le journal gard
   const l = logs.filter(([k]) => k === 'load:retry');
   assert.equal(l.length, 3);
   assert.deepEqual(l[0][1], { page: 0, attempt: 1, waitMs: 400, reason: 'http', status: 503 });
+});
+
+test('loadNewEntries : un id vu sur deux pages (décalage) n\'est rendu qu\'une fois', async () => {
+  const e = env([ok([{ id: 'n0' }, { id: 'n1' }]), ok([{ id: 'n1' }, { id: 'n2' }, { id: 'k0' }])]);
+  const { entries } = await loadNewEntries({ ...e, knownIds: new Set(['k0']) });
+  assert.deepEqual(entries.map((x) => x.id), ['n0', 'n1', 'n2']);
 });
