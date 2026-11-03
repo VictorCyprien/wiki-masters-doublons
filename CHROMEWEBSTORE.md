@@ -1,0 +1,151 @@
+# Chrome Web Store Listing — Doublons pour Wiki Masters (non officiel)
+
+> Last Updated: 2026-11-03
+
+## Store Listing
+
+**Extension Name**
+
+Doublons pour Wiki Masters (non officiel)
+
+**Short Description**
+
+Ajoute « Doublons » au tri de ta collection Wiki Masters : retrouve tes cartes en plusieurs exemplaires. Non officiel.
+
+**Detailed Description**
+
+Ajoute un choix « Doublons » dans le menu de tri de ta collection sur Wiki Masters, pour retrouver d'un coup les cartes que tu as en plusieurs exemplaires.
+
+FONCTIONS
+• Un nouveau choix « Doublons » dans le menu de tri de ta collection
+• Une seule carte par doublon, avec un badge ×N qui indique le nombre d'exemplaires
+• La recherche, les étiquettes et les raretés marchent comme d'habitude
+• Un résumé en haut : « N cartes en double · M exemplaires en trop »
+• Un bouton « ↻ rafraîchir » pour rattraper tes nouvelles cartes
+• Une carte brillante (shiny) compte à part de la version normale
+
+COMMENT FAIRE
+1. Ouvre ta collection sur wiki-masters.com.
+2. Dans le menu de tri, choisis « Doublons ».
+3. La première fois, l'extension lit toute ta collection : compte environ 2 minutes pour 1 000 cartes, en gardant l'onglet visible. Ensuite, c'est immédiat.
+
+VIE PRIVÉE
+Ta collection est lue sur wiki-masters.com avec ta session, puis gardée dans ton navigateur. Elle n'est envoyée nulle part : pas de serveur, pas de statistiques, pas de suivi. L'extension ne demande aucune permission particulière. Elle repère aussi quand tu mets ou retires une étoile ou une étiquette sur le site, pour garder ses cartes à jour.
+
+ACCÈS AU SITE
+Chrome affiche « Lire et modifier tes données sur wiki-masters.com ». C'est nécessaire pour ajouter le choix « Doublons » à la page de ta collection. L'extension ne fonctionne que sur ce site.
+
+À SAVOIR
+• Extension non officielle, sans lien avec Wiki Masters, faite par Victor Cyprien.
+• Si Wiki Masters change son fonctionnement, l'extension peut cesser de marcher, sans gêner le site.
+• Fonctionne avec Chrome 111 ou plus.
+
+SUPPORT
+Un souci, une idée ? Ouvre une issue : https://github.com/A-REMPLACER/wiki-masters-doublons/issues
+L'extension est gratuite. Si elle te rend service, tu peux m'offrir un café depuis sa fenêtre.
+
+Version 1.0.0 : première version.
+
+**Category**
+
+Fun (jeux). Alternative : Productivity.
+
+**Single Purpose**
+
+Ajouter un tri « Doublons » à la page de collection de wiki-masters.com, pour retrouver les cartes que le joueur possède en plusieurs exemplaires.
+
+**Primary Language**
+
+Français
+
+## Graphics & Assets
+
+| Asset | Dimensions | Status | Filename |
+|-------|-----------|--------|----------|
+| Store Icon [REQUIRED] | 128×128 PNG | ✅ Ready | extension/icons/icon-128.png |
+| Screenshot 1 [REQUIRED] | 1280×800 | ⬜ Not created (Victor) | |
+| Screenshot 2 [RECOMMENDED] | 1280×800 | ⬜ Not created (Victor) | |
+| Screenshot 3 [RECOMMENDED] | 1280×800 | ⬜ Not created (Victor) | |
+| Small Promo Tile [RECOMMENDED] | 440×280 | ⬜ Not created | |
+
+### Screenshot Notes
+
+Victor les fait dans son Chrome, et les valide avant usage (elles montrent sa collection).
+1. La collection en mode Doublons : cartes avec badge ×N et la ligne de résumé.
+2. Le menu de tri ouvert, avec le choix « Doublons ».
+3. La progression de la première lecture (« Lecture de ta collection… page 4 / 271 »).
+
+## Permissions Justification
+
+L'extension ne déclare **aucune** entrée `permissions` ni `host_permissions` dans son manifeste.
+
+| Permission | Type | Justification |
+|------------|------|---------------|
+| (aucune) | permissions | Aucune permission demandée. |
+| (aucune) | host_permissions | Aucune permission d'hôte demandée. |
+| Script de contenu sur `https://www.wiki-masters.com/*` | content_scripts | Chrome le présente comme un accès aux données de wiki-masters.com. Il sert à une seule chose : ajouter le choix « Doublons » au menu de tri de la page /collection et afficher les cartes en double. Le script lit la liste des cartes du joueur auprès de wiki-masters.com (même site, avec la session du joueur) pour repérer les doublons, et observe les demandes du site qui ont réussi lors d'un changement d'étoile ou d'étiquette afin de garder la copie locale à jour. Il n'agit que sur la page /collection, et n'a aucun accès à d'autres sites. Aucun code distant n'est chargé. |
+
+## Privacy & Data Use
+
+### Data Collection
+
+**Does the extension collect user data?** Oui, en local seulement (rien ne quitte l'appareil).
+
+| Data Type | Collected? | Transmitted Off-Device? | Purpose | Shared with Third Parties? |
+|-----------|-----------|------------------------|---------|---------------------------|
+| Personally identifiable info | Non | Non | | Non |
+| Health info | Non | Non | | Non |
+| Financial info | Non | Non | | Non |
+| Authentication info | Non (les cookies ne sont pas lus ; aucun jeton ni en-tête n'est gardé) | Non | | Non |
+| Personal communications | Non | Non | | Non |
+| Location | Non | Non | | Non |
+| Web history | Non | Non | | Non |
+| User activity | Oui : étoiles et étiquettes posées ou retirées sur le site (demandes réussies observées) | Non | Garder la copie locale de la collection à jour | Non |
+| Website content | Oui : la collection du joueur (cartes, nombre d'exemplaires, étoiles, étiquettes, identifiant du compte), lue sur wiki-masters.com et gardée dans le stockage local du navigateur | Non (jamais envoyée ailleurs ; les lectures vont uniquement à wiki-masters.com, le site d'origine) | Trouver et afficher les doublons | Non |
+
+À cocher dans le formulaire : « Website content » et « User activity ». Rien d'autre.
+
+### Data Use Certification
+- [x] Data is NOT sold to third parties
+- [x] Data is NOT used for purposes unrelated to the extension's core functionality
+- [x] Data is NOT used for creditworthiness or lending purposes
+
+## Privacy Policy
+
+**Privacy Policy URL**
+
+https://github.com/A-REMPLACER/wiki-masters-doublons/blob/main/PRIVACY.md
+
+(doit être en ligne et accessible avant la soumission)
+
+## Distribution
+
+**Visibility**: Public
+**Regions**: All regions
+
+## Developer Info
+
+**Publisher Name**: Victor Cyprien
+
+**Contact Email**: à compléter par Victor (affiché publiquement ; doit être surveillé)
+
+**Support URL**: https://github.com/A-REMPLACER/wiki-masters-doublons/issues
+
+**Homepage URL**: https://github.com/A-REMPLACER/wiki-masters-doublons
+
+## Version History
+
+| Version | Date | Changes | Status |
+|---------|------|---------|--------|
+| 1.0.0 | 2026-11-03 | Première version : tri « Doublons », badge ×N, résumé, rafraîchir. | Draft |
+
+## Review Notes
+
+### Known Issues / Limitations
+- Le script de contenu sur wiki-masters.com est déclaré dans « Accès au site » ; aucune permission déclarée.
+- Extension non officielle : le nom contient « (non officiel) » et « Wiki Masters » sert à dire pour quel site elle est faite. Risque de remarque sur la marque : si demandé, répondre qu'elle est indépendante et le dit partout.
+- Première lecture longue (environ 2 minutes pour 1 000 cartes) : indiqué dans la description.
+- Les liens de soutien (Buy Me a Coffee, tip.md) sont seulement dans la fenêtre de l'extension, ouverts au clic.
+
+### Rejection History
+Aucune pour l'instant.
