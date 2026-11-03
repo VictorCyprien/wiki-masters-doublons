@@ -65,12 +65,15 @@ test('description exacte', () => {
 test('icônes : make-icons.js est déterministe et reproduit les fichiers versionnés', () => {
   const { execFileSync } = require('node:child_process');
   const script = path.join(__dirname, '..', 'tools', 'make-icons.js');
-  const before = {};
-  for (const n of [16, 32, 48, 128]) {
-    before[n] = fs.readFileSync(path.join(root, 'icons', `icon-${n}.png`));
-  }
-  execFileSync(process.execPath, [script]);
-  for (const n of [16, 32, 48, 128]) {
-    assert.ok(before[n].equals(fs.readFileSync(path.join(root, 'icons', `icon-${n}.png`))), `icon-${n}`);
+  const os = require('node:os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wm-icons-'));
+  try {
+    execFileSync(process.execPath, [script, tmp]); // n'écrit jamais dans les fichiers versionnés
+    for (const n of [16, 32, 48, 128]) {
+      const committed = fs.readFileSync(path.join(root, 'icons', `icon-${n}.png`));
+      assert.ok(committed.equals(fs.readFileSync(path.join(tmp, `icon-${n}.png`))), `icon-${n}`);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 });

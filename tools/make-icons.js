@@ -131,6 +131,7 @@ function png(size) {
   ]);
 }
 
-const outDir = path.join(__dirname, '..', 'extension', 'icons');
+// Dossier de sortie : premier argument, sinon extension/icons (les tests écrivent dans un dossier temporaire).
+const outDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, '..', 'extension', 'icons');
 fs.mkdirSync(outDir, { recursive: true });
 for (const s of SIZES) fs.writeFileSync(path.join(outDir, `icon-${s}.png`), png(s));
