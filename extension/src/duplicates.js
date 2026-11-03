@@ -63,6 +63,11 @@
       .replace(/[̀-ͯ]/g, '');
   }
 
+  function tagged(members, tagId) {
+    const hit = members.filter((e) => e.tags.some((t) => t.id === tagId));
+    return hit.length ? pickRepresentative(hit) : null;
+  }
+
   function filterGroups(groups, { search, tagId, rarities }) {
     const q = normalizeText(search || '');
     let out = groups.filter((g) => {
@@ -77,7 +82,7 @@
     if (tagId) {
       out = out.map((g) => ({
         ...g,
-        entry: g.members.find((e) => e.tags.some((t) => t.id === tagId)) ?? g.entry,
+        entry: tagged(g.members, tagId) ?? g.entry,
       }));
     }
     return out;

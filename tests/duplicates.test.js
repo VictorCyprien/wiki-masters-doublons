@@ -146,3 +146,13 @@ test('rarityCounts', () => {
   ]);
   assert.deepEqual(rarityCounts(groups), { C: 2, L: 1 });
 });
+
+test('filtre par étiquette : représentante parmi les seuls membres étiquetés', () => {
+  const tag = [{ id: 't1' }];
+  const a = makeEntry({ id: 'a', title: 'W', tags: tag, starred: true, obtainedAt: '2026-09-01T00:00:00+00:00' });
+  const b = makeEntry({ id: 'b', title: 'W', tags: tag, obtainedAt: '2026-11-01T00:00:00+00:00' });
+  const c = makeEntry({ id: 'c', title: 'W', obtainedAt: '2026-12-01T00:00:00+00:00' });
+  const { filterGroups } = require('../extension/src/duplicates.js');
+  const out = filterGroups(groupDuplicates([c, b, a]), { tagId: 't1' });
+  assert.equal(out[0].entry.id, 'a');
+});

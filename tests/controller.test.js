@@ -914,3 +914,122 @@ test('applyMutations : erreur de cache avalée et journalisée sans corps', asyn
   await c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
   assert.ok(logs.some((a) => a[0] === 'mutation' && a[1].kind === 'starred' && a[1].entryId === 'old' && Object.keys(a[1]).length === 2));
 });
+
+// --- Fix round 1 : mutations pendant une lecture, file d'écriture, comptes ---
+const twoD = () => [
+  makeEntry({ id: 'old', title: 'D', obtainedAt: '2026-10-01T00:00:00+00:00' }),
+  makeEntry({ id: 'new', title: 'D', obtainedAt: '2026-11-01T00:00:00+00:00' }),
+];
+const STAR_OLD = [{ kind: 'starred', entryId: 'old', value: true }];
+
+test('mutation pendant une lecture complète : cache et vue la gardent', async () => {
+  const gate = deferred();
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 2 }),
+    loadAll: async () => { const e = twoD(); await gate.promise; return { entries: e }; },
+  });
+  const p = c.enter();
+  await tick(); await tick();
+  await c.applyMutations(STAR_OLD);
+  gate.resolve();
+  await p;
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+  assert.equal(listOf(c)[0].id, 'old');
+});
+
+test('mutation entre fetchFreshness et cache.get dans enter()', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(twoD()));
+  await cache.setLastUserId('u1');
+  const p = c.enter();
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  const m = c.applyMutations(STAR_OLD);
+  await Promise.all([p, m]);
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+  assert.equal(listOf(c)[0].id, 'old');
+  await c.refresh();
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+});
+
+test('mutation pendant une lecture : le partiel sauvegardé la contient', async () => {
+  const gate = deferred();
+  const e = twoD();
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 2 }),
+    loadAll: async (o) => {
+      o.onPage({ page: 0, entries: e });
+      await gate.promise;
+      throw Object.assign(new Error('x'), { name: 'IncompleteLoadError', reason: 'network', page: 0 });
+    },
+  });
+  const p = c.enter();
+  await tick(); await tick();
+  await c.applyMutations(STAR_OLD);
+  gate.resolve();
+  await p;
+  const partial = await cache.getPartial('u1');
+  assert.equal(partial.entries.find((x) => x.id === 'old').starred, true);
+});
+
+test('mutation sans lecture : le partiel existant la reçoit aussi', async () => {
+  const { c, cache } = setup();
+  await cache.setLastUserId('u1');
+  await cache.putPartial('u1', { entries: twoD(), nextPage: 1, pageCount: 3, savedAt: 1, total: 2, rarityCounts: {} });
+  await c.applyMutations(STAR_OLD);
+  assert.equal((await cache.getPartial('u1')).entries.find((x) => x.id === 'old').starred, true);
+});
+
+test('la persistance ne défait pas un refresh incrémental qui finit (balayage)', async () => {
+  for (let k = 0; k < 40; k++) {
+    const gate = deferred();
+    let calls = 0;
+    const { c, cache } = setup({
+      fetchFreshness: async () => (calls++ === 0 ? fresh({ total: 2 }) : fresh({ total: 3, freshness: 'F2' })),
+      loadNew: async () => { await gate.promise; return { entries: [makeEntry({ id: 'n3', title: 'Q' })] }; },
+    });
+    await cache.put('u1', rec(twoD()));
+    await c.enter();
+    const r = c.refresh();
+    await tick();
+    gate.resolve();
+    for (let i = 0; i < k; i++) await Promise.resolve();
+    const m = c.applyMutations(STAR_OLD);
+    await Promise.all([r, m]);
+    const s = await cache.get('u1');
+    assert.equal(s.entries.length, 3, `k=${k}`);
+    assert.equal(s.freshness, 'F2', `k=${k}`);
+    assert.equal(s.entries.find((e) => e.id === 'old').starred, true, `k=${k}`);
+  }
+});
+
+test('changement de compte : l\'entrée est cherchée aussi dans le cache de lastUserId', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(twoD()));
+  await cache.setLastUserId('u1');
+  await c.enter();
+  await cache.put('u2', rec([makeEntry({ id: 'other', title: 'Z' })]));
+  await cache.setLastUserId('u2');
+  await c.applyMutations([{ kind: 'starred', entryId: 'other', value: true }]);
+  assert.equal((await cache.get('u2')).entries[0].starred, true);
+});
+
+test('onState qui lève : la persistance a quand même lieu', async () => {
+  const { c, cache } = setup({ onState: () => { if (throwing) throw new Error('vue'); } });
+  let throwing = false;
+  await cache.put('u1', rec(twoD()));
+  await c.enter();
+  throwing = true;
+  await c.applyMutations(STAR_OLD);
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+});
+
+test('erreur de cache : mutation:cache-error journalisé', async () => {
+  const logs = [];
+  const { c, cache } = setup({ log: (...a) => logs.push(a) });
+  await cache.put('u1', rec(twoD()));
+  await c.enter();
+  cache.get = async () => { throw new Error('boom'); };
+  await c.applyMutations(STAR_OLD);
+  assert.ok(logs.some((a) => a[0] === 'mutation:cache-error'));
+});

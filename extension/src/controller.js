@@ -19,6 +19,22 @@
     let inflight = null;
     let ctrl = null;
     let memo = { record: null, groups: null };
+    let pending = []; // mutations reçues pendant une lecture ou une entrée en cours
+    let persistQueue = Promise.resolve(); // toutes les écritures du cache du contrôleur, en série
+
+    // Exécute `fn` après les écritures précédentes ; la file continue même si `fn` échoue.
+    function queued(fn) {
+      const p = persistQueue.then(fn);
+      persistQueue = p.then(() => {}, () => {});
+      return p;
+    }
+
+    // Rejoue les mutations reçues en cours de lecture sur un enregistrement qui va être écrit ou adopté.
+    function replay(rec) {
+      if (!rec) return rec;
+      for (const list of pending) applyTo(rec, list);
+      return rec;
+    }
 
     function setState(patch) {
       const prevMode = state.mode;
@@ -143,7 +159,7 @@
         const snapshot = { entries: entries.slice(), nextPage, pageCount, savedAt: now(), total: f.total, rarityCounts: { ...(f.template?.rarityCounts ?? {}) } };
         writes = writes.then(() => {
           if (gen !== mine) return undefined;
-          return cache.putPartial(uid0, snapshot);
+          return queued(() => { replay(snapshot); return cache.putPartial(uid0, snapshot); });
         }).catch(() => {});
       };
       const onPage = ({ page, entries }) => {
@@ -164,10 +180,11 @@
           if (latest.length > 0) {
             let saved = false;
             try {
-              await step(mine, cache.putPartial(uid0, {
+              const snap = {
                 entries: latest.slice(), nextPage: err.page, pageCount, savedAt: now(), total: f.total,
                 rarityCounts: { ...(f.template?.rarityCounts ?? {}) },
-              }));
+              };
+              await step(mine, queued(() => { replay(snap); return cache.putPartial(uid0, snap); }));
               saved = true;
             } catch (werr) {
               if (werr === STALE) throw werr;
@@ -195,11 +212,11 @@
       }
       const rec = { entries: merged, total: f2.total, freshness: f2.freshness, template: f2.template, loadedAt: now() };
       const uid = f2.userId ?? null;
-      if (uid !== null) await step(mine, cache.put(uid, rec));
+      if (uid !== null) await step(mine, queued(() => { replay(rec); return cache.put(uid, rec); }));
       await step(mine, writes);
       await dropPartial(mine, uid0);
       guard(mine);
-      adopt(rec, uid);
+      adopt(replay(rec), uid);
       log('load:done', { entries: merged.length });
       setReady();
     }
@@ -221,7 +238,7 @@
           return;
         }
         guard(mine);
-        adopt(cached, uid);
+        adopt(replay(cached), uid);
         setReady({ freshnessUnknown: true });
         return;
       }
@@ -230,7 +247,7 @@
       if (cached) {
         guard(mine);
         cached.template = f.template;
-        adopt(cached, f.userId);
+        adopt(replay(cached), f.userId);
         const stale = cached.freshness !== f.freshness;
         log(`freshness:${stale ? 'changed' : 'same'}`);
         setReady({ stale });
@@ -294,9 +311,9 @@
         log('refresh:incremental');
         const rec = { entries: merged, total: f.total, freshness: f.freshness, template: f.template, loadedAt: now() };
         const uid = f.userId ?? recordUserId;
-        if (uid != null) await step(mine, cache.put(uid, rec));
+        if (uid != null) await step(mine, queued(() => { replay(rec); return cache.put(uid, rec); }));
         guard(mine);
-        adopt(rec, uid);
+        adopt(replay(rec), uid);
         log('load:done', { entries: merged.length });
         setReady();
         return;
@@ -328,7 +345,7 @@
           fail(err);
         }
       })().finally(() => {
-        if (inflight === p) inflight = null;
+        if (inflight === p) { inflight = null; pending = []; }
       });
       inflight = p;
       return p;
@@ -341,6 +358,7 @@
       record = null;
       recordUserId = null;
       memo = { record: null, groups: null };
+      pending = [];
       setState({ mode: 'loading', error: null, progress: null, stale: false, freshnessUnknown: false });
       return start(mine, enterBody);
     }
@@ -352,6 +370,7 @@
       // (comme une entrée en mode) plutôt que de relancer une lecture complète.
       if (state.mode === 'error' && state.error === 'unexpected') return enter();
       ctrl = new AbortController();
+      pending = [];
       return start(gen, refreshBody);
     }
 
@@ -414,14 +433,14 @@
 
     // --- Favoris et étiquettes changés sur le site (même navigateur) ---
 
-    function tagObject(rec, tagId) {
-      const t = (rec.template?.tagOptions ?? []).find((o) => o && o.id === tagId);
+    function tagObject(tpl, tagId) {
+      const t = (tpl?.tagOptions ?? []).find((o) => o && o.id === tagId);
       if (!t) return { id: tagId };
       return { id: t.id, name: t.name, color: t.color, user_id: t.user_id, created_at: t.created_at };
     }
 
     // Applique la liste à `rec` en place ; vrai si au moins une entrée connue a été touchée.
-    function applyTo(rec, list) {
+    function applyTo(rec, list, tpl = rec?.template) {
       if (!rec || !Array.isArray(rec.entries)) return false;
       const byId = new Map(rec.entries.map((e) => [e.id, e]));
       let changed = false;
@@ -433,7 +452,7 @@
           e.starred = m.value;
         } else if (m.kind === 'tagAdd') {
           e.tags = Array.isArray(e.tags) ? e.tags : [];
-          if (!e.tags.some((t) => t.id === m.tagId)) e.tags.push(tagObject(rec, m.tagId));
+          if (!e.tags.some((t) => t.id === m.tagId)) e.tags.push(tagObject(tpl, m.tagId));
         } else if (m.kind === 'tagRemove') {
           e.tags = (e.tags ?? []).filter((t) => t.id !== m.tagId);
         }
@@ -441,29 +460,44 @@
       return changed;
     }
 
-    let persistQueue = Promise.resolve();
+    async function persistMutations(uid0, list) {
+      try {
+        const last = await cache.getLastUserId();
+        const uids = [uid0, last].filter((u, i, a) => u != null && a.indexOf(u) === i);
+        for (const uid of uids) {
+          const stored = await cache.get(uid);
+          let changed = false;
+          if (stored && applyTo(stored, list)) {
+            await cache.put(uid, stored);
+            changed = true;
+          }
+          const partial = await cache.getPartial(uid);
+          if (partial && applyTo(partial, list, stored?.template ?? record?.template)) {
+            await cache.putPartial(uid, partial);
+            changed = true;
+          }
+          if (changed) break;
+        }
+      } catch (err) {
+        log('mutation:cache-error', { error: String((err && err.message) || err) });
+      }
+    }
 
     function applyMutations(list) {
       if (!Array.isArray(list) || list.length === 0) return Promise.resolve();
       for (const m of list) log('mutation', { kind: m.kind, entryId: m.entryId });
+      if (inflight) pending.push(list);
       // Synchrone d'abord : le prochain `respond` voit déjà le changement.
-      if (applyTo(record, list)) {
+      const changed = applyTo(record, list);
+      // La persistance est mise en file avant tout rappel de la vue (un rappel qui lève ne la saute pas).
+      const done = queued(() => persistMutations(recordUserId, list));
+      if (changed) {
         memo = { record: null, groups: null };
-        if (state.mode === 'ready') setState({});
-      }
-      const uid0 = recordUserId;
-      persistQueue = persistQueue.then(async () => {
-        try {
-          const uid = uid0 ?? await cache.getLastUserId();
-          if (uid == null) return;
-          const stored = await cache.get(uid);
-          if (!stored) return;
-          if (applyTo(stored, list)) await cache.put(uid, stored);
-        } catch (err) {
-          log('mutation:cache-error', { error: String((err && err.message) || err) });
+        if (state.mode === 'ready') {
+          try { setState({}); } catch (err) { log('mutation:state-error', { error: String((err && err.message) || err) }); }
         }
-      });
-      return persistQueue;
+      }
+      return done;
     }
 
     return { enter, exit, abandon, refresh, shouldIntercept, respond, applyMutations, getState: () => ({ ...state }) };

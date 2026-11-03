@@ -262,3 +262,19 @@ test('onResponse : vu avant le then du site', async () => {
   await target.fetch('/a', { method: 'POST', body: '{}' }).then(() => order.push('site'));
   assert.deepEqual(order, ['rappel', 'site']);
 });
+
+test('onResponse : vrai Request DELETE', async () => {
+  const { target, seen } = withOnResponse(okFetch(204));
+  await target.fetch(new Request('https://x.test/rest/v1/user_card_tags?a=eq.1', { method: 'DELETE' }));
+  assert.deepEqual(seen, [{ url: 'https://x.test/rest/v1/user_card_tags?a=eq.1', method: 'DELETE', body: null, status: 204 }]);
+});
+
+test('onResponse : ReadableStream et FormData donnent body null, corps non consommé', async () => {
+  const { target, seen } = withOnResponse(okFetch(200));
+  const stream = new ReadableStream();
+  await target.fetch('/a', { method: 'POST', body: stream });
+  await target.fetch('/a', { method: 'POST', body: new FormData() });
+  assert.equal(seen[0].body, null);
+  assert.equal(seen[1].body, null);
+  assert.equal(stream.locked, false);
+});
