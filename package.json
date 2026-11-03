@@ -1,0 +1,9 @@
+{
+  "name": "wikimaster-doublons",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "icons": "node tools/make-icons.js",
+    "package": "bash tools/package.sh"
+  }
+}

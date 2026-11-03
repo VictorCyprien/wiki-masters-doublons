@@ -1,0 +1,1404 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const siteApi = require('../extension/src/site-api.js');
+const dupApi = require('../extension/src/duplicates.js');
+const L = require('../extension/src/loader.js');
+const { IncompleteLoadError, AbortedLoadError } = L;
+const { memoryStore, createCache } = require('../extension/src/cache.js');
+const { makeEntry } = require('./helpers.js');
+const { createController } = require('../extension/src/controller.js');
+
+const LIST = '/api/my-collection?sort=rarity&page=0&stats=0';
+const tick = () => new Promise((r) => setImmediate(r));
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+const fresh = (o = {}) => ({ userId: 'u1', total: 5, freshness: 'F1', template: { collection: [], tagOptions: [] }, ...o });
+const rec = (entries, o = {}) => ({ entries, total: entries.length, freshness: 'F1', template: { collection: [], tagOptions: [] }, loadedAt: 1, ...o });
+
+function setup(over = {}) {
+  const cache = createCache(memoryStore());
+  const states = [];
+  const calls = { fresh: 0, loadAll: [], loadNew: [] };
+  const d = {
+    fetchFreshness: async () => { calls.fresh += 1; return fresh(); },
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: [] }; },
+    loadNew: async (o) => { calls.loadNew.push(o); return { entries: [] }; },
+    cache,
+    site: { classifyUrl: siteApi.classifyUrl, parseSiteQuery: siteApi.parseSiteQuery, buildListResponse: siteApi.buildListResponse,
+      buildStatsResponse: siteApi.buildStatsResponse, PAGE_SIZE: siteApi.SITE.PAGE_SIZE },
+    dup: { groupDuplicates: dupApi.groupDuplicates, filterGroups: dupApi.filterGroups, summarize: dupApi.summarize, rarityCounts: dupApi.rarityCounts },
+    now: () => 4242,
+    onState: (s) => states.push(s),
+    ...over,
+  };
+  return { c: createController(d), cache, states, calls, d };
+}
+const ents = (n, p = 'x') => Array.from({ length: n }, (_, i) => makeEntry({ id: `${p}${i}`, title: `${p}${i}` }));
+
+test('pas de cache : total frais incohérent -> mismatch, error incomplete, rien en cache', async () => {
+  const entries = ents(5);
+  const { c, cache, states, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: entries.slice(0, 4) }; },
+    loadNew: async () => ({ entries: [entries[4]] }),
+  });
+  // total frais final 13522 != 5 -> mismatch ; vérifions d'abord les appels
+  await c.enter();
+  assert.equal(calls.loadAll.length, 1);
+  assert.equal(calls.loadAll[0].pageCount, 271);
+  assert.equal(calls.loadAll[0].expectedTotal, null);
+  assert.ok(states.some((s) => s.mode === 'loading' && s.progress?.phase === 'full'));
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('u1'), null);
+});
+
+test('pas de cache : cache rempli avec freshness, template, loadedAt', async () => {
+  const entries = ents(5);
+  const { c, cache, states } = setup({
+    loadAll: async () => ({ entries }),
+  });
+  await c.enter();
+  const r = await cache.get('u1');
+  assert.equal(r.entries.length, 5);
+  assert.equal(r.freshness, 'F1');
+  assert.deepEqual(r.template, { collection: [], tagOptions: [] });
+  assert.equal(r.loadedAt, 4242);
+  assert.equal(await cache.getLastUserId(), 'u1');
+  assert.equal(states.at(-1).mode, 'ready');
+  assert.equal(states.at(-1).stale, false);
+});
+
+test('lecture complète : loadAll 3, loadNew 1, total frais 4 -> ready avec 4 entrées', async () => {
+  const e = ents(4);
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 4 }),
+    loadAll: async () => ({ entries: e.slice(0, 3) }),
+    loadNew: async (o) => { calls.loadNew.push(o); return { entries: [e[3]] }; },
+  });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('u1')).entries.length, 4);
+  assert.equal(calls.loadNew[0].knownIds.size, 3);
+});
+
+test('cache, même fraîcheur : aucune lecture, stale false', async () => {
+  const { c, cache, calls } = setup();
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  assert.equal(calls.loadAll.length + calls.loadNew.length, 0);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().stale, false);
+});
+
+test('cache, autre fraîcheur : stale true, aucune lecture', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ freshness: 'F2' }) });
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  assert.equal(calls.loadAll.length + calls.loadNew.length, 0);
+  assert.equal(c.getState().stale, true);
+  assert.equal(c.getState().mode, 'ready');
+});
+
+test('fetchFreshness rejette : cache de lastUserId, freshnessUnknown', async () => {
+  const { c, cache } = setup({ fetchFreshness: async () => { throw new Error('x'); } });
+  await cache.put('u1', rec(ents(3)));
+  await cache.setLastUserId('u1');
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().freshnessUnknown, true);
+});
+
+test('fetchFreshness total null : traité comme un échec', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: null }) });
+  await c.enter();
+  assert.equal(c.getState().error, 'freshness');
+  assert.equal(calls.loadAll.length, 0);
+  await cache.put('u1', rec(ents(3)));
+  await cache.setLastUserId('u1');
+  c.exit();
+  await c.enter();
+  assert.equal(c.getState().freshnessUnknown, true);
+});
+
+test('fetchFreshness rejette sans cache : error freshness, aucune lecture', async () => {
+  const { c, calls } = setup({ fetchFreshness: async () => { throw new Error('x'); } });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'freshness');
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(c.shouldIntercept(LIST), false);
+});
+
+test('setLastUserId après chaque fetchFreshness réussi', async () => {
+  const { c, cache } = setup({ fetchFreshness: async () => fresh({ userId: 'u7' }) });
+  await cache.put('u7', rec(ents(3)));
+  await c.enter();
+  assert.equal(await cache.getLastUserId(), 'u7');
+});
+
+test('userId null, collection vide : pas de put ni setLastUserId', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ userId: null, total: 0 }),
+    loadAll: async () => ({ entries: [] }),
+  });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(await cache.getLastUserId(), null);
+});
+
+test('refresh incrémental : 3 en cache + 2 nouvelles, total 5', async () => {
+  const old = ents(3, 'o');
+  const nw = ents(2, 'n');
+  const { c, cache, calls } = setup({ loadNew: async (o) => { calls.loadNew.push(o); return { entries: nw }; } });
+  await cache.put('u1', rec(old, { freshness: 'F0' }));
+  await c.enter();
+  assert.equal(c.getState().stale, true);
+  await c.refresh();
+  const r = await cache.get('u1');
+  assert.equal(r.entries.length, 5);
+  assert.equal(r.freshness, 'F1');
+  assert.equal(r.loadedAt, 4242);
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(c.getState().stale, false);
+  assert.equal(c.getState().mode, 'ready');
+});
+
+test('refresh avec carte partie : lecture complète avec le total frais', async () => {
+  const old = ents(3, 'o');
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 2 }),
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: old.slice(0, 2) }; },
+  });
+  await cache.put('u1', rec(old));
+  await c.enter();
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 1);
+  assert.equal(calls.loadAll[0].pageCount, 1);
+  assert.equal((await cache.get('u1')).entries.length, 2);
+});
+
+test('refresh : too-many-new -> lecture complète', async () => {
+  const old = ents(3, 'o');
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 3 }),
+    loadNew: async (o) => {
+      calls.loadNew.push(o);
+      if (calls.loadNew.length === 1) throw new IncompleteLoadError({ reason: 'too-many-new' });
+      return { entries: [] };
+    },
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: old }; },
+  });
+  await cache.put('u1', rec(old));
+  await c.enter();
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 1);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().error, null);
+});
+
+test('refresh : autre compte -> lecture complète sans fusion', async () => {
+  const old = ents(3, 'o');
+  const mine = ents(2, 'm');
+  let user = 'u1';
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ userId: user, total: 2 }),
+    loadNew: async (o) => { calls.loadNew.push(o); return { entries: [] }; },
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: mine }; },
+  });
+  await cache.put('u1', rec(old, { total: 2 }));
+  await c.enter();
+  user = 'u2';
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 1);
+  const r2 = await cache.get('u2');
+  assert.deepEqual(r2.entries.map((e) => e.id), ['m0', 'm1']);
+  assert.equal((await cache.get('u1')).entries.length, 3);
+});
+
+test('refresh deux fois pendant une lecture : loadNew une fois', async () => {
+  const gate = deferred();
+  const { c, cache, calls } = setup({
+    loadNew: async (o) => { calls.loadNew.push(o); await gate.promise; return { entries: ents(2, 'n') }; },
+  });
+  await cache.put('u1', rec(ents(3), { freshness: 'F0' }));
+  await c.enter();
+  const a = c.refresh();
+  const b = c.refresh();
+  gate.resolve();
+  await Promise.all([a, b]);
+  assert.equal(calls.loadNew.length, 1);
+});
+
+test('refresh pendant le loadAll d\'enter : même promesse, loadAll une fois', async () => {
+  const gate = deferred();
+  const e = ents(5);
+  const { c, calls } = setup({
+    loadAll: async (o) => { calls.loadAll.push(o); await gate.promise; return { entries: e }; },
+  });
+  const p1 = c.enter();
+  await tick();
+  const p2 = c.refresh();
+  const p3 = c.enter();
+  assert.equal(p1, p2);
+  assert.equal(p1, p3);
+  gate.resolve();
+  await p1;
+  assert.equal(calls.loadAll.length, 1);
+});
+
+test('pendant refresh : interception gardée, ancien enregistrement servi', async () => {
+  const gate = deferred();
+  const old = [makeEntry({ id: 'a1', title: 'A' }), makeEntry({ id: 'a2', title: 'A' })];
+  const { c, cache } = setup({ loadNew: async () => { await gate.promise; return { entries: [] }; } });
+  await cache.put('u1', rec(old, { freshness: 'F0' }));
+  await c.enter();
+  const p = c.refresh();
+  await tick();
+  assert.equal(c.getState().mode, 'loading');
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), true);
+  assert.equal(c.respond(LIST).collection.length, 1);
+  gate.resolve();
+  await p;
+});
+
+test('première lecture : rien n\'est intercepté', async () => {
+  const gate = deferred();
+  const { c } = setup({ loadAll: async () => { await gate.promise; return { entries: [] }; } });
+  const p = c.enter();
+  await tick();
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), false);
+  gate.resolve();
+  await p;
+});
+
+test('shouldIntercept : classifyUrl nul -> faux', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), true);
+  assert.equal(c.shouldIntercept('/api/boosters'), false);
+});
+
+test('loadAll IncompleteLoadError avec ancien cache : ready, error incomplete, cache intact', async () => {
+  const old = ents(3, 'o');
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 2 }),
+    loadNew: async () => ({ entries: [] }),
+    loadAll: async () => { throw new IncompleteLoadError({ reason: 'mismatch' }); },
+  });
+  await cache.put('u1', rec(old));
+  await c.enter();
+  await c.refresh();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal((await cache.get('u1')).entries.length, 3);
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), true);
+});
+
+test('loadAll IncompleteLoadError sans cache : mode error, pas d\'interception', async () => {
+  const { c } = setup({ loadAll: async () => { throw new IncompleteLoadError({ reason: 'mismatch' }); } });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), false);
+});
+
+test('exception inattendue (cache) : error unexpected', async () => {
+  const { c, cache } = setup();
+  cache.get = async () => { throw new Error('idb'); };
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'unexpected');
+});
+
+test('AbortedLoadError sans exit : mode off sans erreur', async () => {
+  const { c } = setup({ loadAll: async () => { throw new AbortedLoadError(); } });
+  await c.enter();
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(c.getState().error, null);
+});
+
+test('exit pendant loading : signal aborted, off, pas d\'interception', async () => {
+  const gate = deferred();
+  let sig;
+  const { c } = setup({ loadAll: async (o) => { sig = o.signal; await gate.promise; throw new AbortedLoadError(); } });
+  const p = c.enter();
+  await tick();
+  c.exit();
+  assert.equal(sig.aborted, true);
+  gate.resolve();
+  await p;
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(c.shouldIntercept(LIST), false);
+});
+
+test('exit pendant fetchFreshness : reste off, loadAll jamais appelé', async () => {
+  const gate = deferred();
+  const { c, calls } = setup({ fetchFreshness: async () => { await gate.promise; return fresh(); } });
+  const p = c.enter();
+  await tick();
+  c.exit();
+  gate.resolve();
+  await p;
+  await tick();
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(calls.loadAll.length, 0);
+});
+
+test('exit puis enter pendant une lecture : l\'abandon tardif ne touche pas la seconde', async () => {
+  const g1 = deferred();
+  const g2 = deferred();
+  let n = 0;
+  const e = ents(5);
+  const { c } = setup({
+    loadAll: async () => {
+      n += 1;
+      if (n === 1) { await g1.promise; throw new AbortedLoadError(); }
+      await g2.promise;
+      return { entries: e };
+    },
+  });
+  const p1 = c.enter();
+  await tick();
+  c.exit();
+  const p2 = c.enter();
+  await tick();
+  assert.notEqual(p1, p2);
+  g1.resolve();
+  await p1;
+  assert.equal(c.getState().mode, 'loading');
+  g2.resolve();
+  await p2;
+  assert.equal(c.getState().mode, 'ready');
+});
+
+test('exit remet summary et pageCounts à null', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec([makeEntry({ title: 'A' }), makeEntry({ title: 'A' })]));
+  await c.enter();
+  c.respond(LIST);
+  assert.notEqual(c.getState().summary, null);
+  c.exit();
+  assert.equal(c.getState().summary, null);
+  assert.equal(c.getState().pageCounts, null);
+});
+
+function dupCollection() {
+  return [
+    makeEntry({ id: '1', title: 'Alpha', rarity: 'L', count: 3 }),
+    makeEntry({ id: '2', title: 'Beta', rarity: 'L' }),
+    makeEntry({ id: '3', title: 'Beta', rarity: 'L' }),
+    makeEntry({ id: '4', title: 'Gamma', rarity: 'C', count: 2 }),
+    makeEntry({ id: '5', title: 'Solo', rarity: 'L' }),
+  ];
+}
+
+test('respond liste : filtre L, une entrée par groupe, summary et pageCounts', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(dupCollection()));
+  await c.enter();
+  const body = c.respond('/api/my-collection?sort=rarity&rarity=L&page=0&stats=0');
+  assert.deepEqual(body.collection.map((e) => e.card.wikipedia_title), ['Alpha', 'Beta']);
+  assert.deepEqual(c.getState().summary, { cards: 2, extra: 3 });
+  assert.deepEqual(c.getState().pageCounts, [3, 2]);
+});
+
+test('respond stats : total = groupes L, rarityCounts ignore le filtre de rareté', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(dupCollection()));
+  await c.enter();
+  const s = c.respond('/api/my-collection/stats?sort=rarity&rarity=L');
+  assert.equal(s.total, 2);
+  assert.deepEqual(s.rarityCounts, { L: 2, C: 1 });
+});
+
+test('groupes mémoïsés par enregistrement', async () => {
+  let calls = 0;
+  const { c, cache, d } = setup();
+  const orig = d.dup.groupDuplicates;
+  d.dup.groupDuplicates = (e) => { calls += 1; return orig(e); };
+  await cache.put('u1', rec(dupCollection()));
+  await c.enter();
+  c.respond(LIST);
+  c.respond('/api/my-collection/stats?sort=rarity');
+  c.respond(LIST);
+  assert.equal(calls, 1);
+});
+
+test('template frais appliqué à l\'enregistrement en mémoire', async () => {
+  const { c, cache } = setup({ fetchFreshness: async () => fresh({ template: { collection: [], tagOptions: [{ id: 't' }], extra: 1 } }) });
+  await cache.put('u1', rec(dupCollection()));
+  await c.enter();
+  assert.equal(c.respond(LIST).extra, 1);
+});
+
+test('collection sans doublon : liste vide, summary 0, stats total 0', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec([makeEntry({ title: 'A' }), makeEntry({ title: 'B' })]));
+  await c.enter();
+  assert.deepEqual(c.respond(LIST).collection, []);
+  assert.deepEqual(c.getState().summary, { cards: 0, extra: 0 });
+  assert.equal(c.respond('/api/my-collection/stats?sort=rarity').total, 0);
+});
+
+test('refresh puis exit, loadNew rejette too-many-new : aucun appel de plus, reste off', async () => {
+  const gate = deferred();
+  const { c, cache, calls } = setup({ loadNew: async () => { await gate.promise; throw new IncompleteLoadError({ reason: 'too-many-new' }); } });
+  await cache.put('u1', rec(ents(3), { freshness: 'F0' }));
+  await c.enter();
+  const before = calls.fresh;
+  const p = c.refresh();
+  await tick();
+  c.exit();
+  gate.resolve();
+  await p;
+  await tick();
+  assert.equal(calls.fresh, before);
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(c.getState().mode, 'off');
+});
+
+test('exit puis fetchFreshness rejette en retard : lastUserId non lu, état inchangé', async () => {
+  const gate = deferred();
+  const { c, cache, states } = setup({ fetchFreshness: async () => { await gate.promise; throw new Error('x'); } });
+  let read = 0;
+  const orig = cache.getLastUserId;
+  cache.getLastUserId = (...a) => { read += 1; return orig(...a); };
+  const p = c.enter();
+  await tick();
+  c.exit();
+  const n = states.length;
+  gate.resolve();
+  await p;
+  await tick();
+  assert.equal(read, 0);
+  assert.equal(states.length, n);
+  assert.equal(c.getState().mode, 'off');
+});
+
+test('changement de compte pendant refresh : ancien enregistrement plus servi, échec -> mode error', async () => {
+  const gate = deferred();
+  let user = 'u1';
+  const s = setup({
+    fetchFreshness: async () => fresh({ userId: user, total: 2 }),
+    loadNew: async () => ({ entries: [] }),
+    loadAll: async () => { await gate.promise; throw new IncompleteLoadError({ reason: 'network' }); },
+  });
+  await s.cache.put('u1', rec(ents(3, 'o')));
+  await s.c.enter();
+  user = 'u2';
+  const p = s.c.refresh();
+  await tick();
+  assert.equal(s.c.shouldIntercept('/api/my-collection?page=0'), false);
+  gate.resolve();
+  await p;
+  assert.equal(s.c.getState().mode, 'error');
+});
+
+test('enter() en mode actif, fetchFreshness échoue sans cache lastUserId : plus d\'interception', async () => {
+  let fail = false;
+  const { c, cache } = setup({ fetchFreshness: async () => { if (fail) throw new Error('x'); return fresh(); } });
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), true);
+  fail = true;
+  await cache.setLastUserId('nobody');
+  await c.enter();
+  assert.equal(c.shouldIntercept('/api/my-collection?page=0'), false);
+  assert.equal(c.getState().error, 'freshness');
+});
+
+test('vérification de la lecture complète : la progression full est conservée', async () => {
+  const e = ents(5);
+  const { c, states } = setup({
+    loadAll: async (o) => { o.onProgress({ pagesRead: 1, pageCount: 1 }); return { entries: e.slice(0, 4) }; },
+    loadNew: async (o) => { o.onProgress({ pagesRead: 1, pageCount: null }); assert.equal(c.getState().progress.phase, 'full'); assert.equal(c.getState().progress.pageCount, 1); return { entries: [e[4]] }; },
+  });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.ok(!states.some((s) => s.progress && s.progress.phase === 'full' && s.progress.pageCount === null));
+});
+
+test('refresh sans enregistrement, fetchFreshness échoue : loading puis error freshness', async () => {
+  let fail = true;
+  const { c, states } = setup({ fetchFreshness: async () => { if (fail) throw new Error('x'); return fresh(); } });
+  await c.enter();
+  assert.equal(c.getState().error, 'freshness');
+  const n = states.length;
+  const p = c.refresh();
+  assert.equal(c.getState().mode, 'loading');
+  assert.ok(states.length > n);
+  await p;
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'freshness');
+});
+
+// --- Task 10 : essais espacés, reprise de la lecture complète ---
+const objs = (from, to) => Array.from({ length: to - from }, (_, i) => ({ id: `r${from + i}` }));
+
+test('échec à la page d\'indice 96 : putPartial, error, resumeAt ; refresh reprend et finit', async () => {
+  const read = objs(0, 96 * 50);
+  const all = objs(0, 13522);
+  let mode = 'fail';
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      calls.loadAll.push(o);
+      if (mode === 'fail') {
+        o.onPage({ page: 95, entries: read });
+        throw new IncompleteLoadError({ reason: 'http', page: 96, status: 503 });
+      }
+      return { entries: all };
+    },
+  });
+  await c.enter();
+  const p = await cache.getPartial('u1');
+  assert.equal(p.nextPage, 96);
+  assert.equal(p.entries.length, 96 * 50);
+  assert.equal(p.pageCount, 271);
+  assert.equal(p.savedAt, 4242);
+  assert.equal(c.getState().mode, 'error');
+  assert.deepEqual(c.getState().resumeAt, { page: 97, pageCount: 271 });
+  mode = 'ok';
+  await c.refresh();
+  const last = calls.loadAll.at(-1);
+  assert.equal(last.startPage, 96);
+  assert.equal(last.initialEntries.length, 96 * 50);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().resumeAt, null);
+  assert.equal(await cache.getPartial('u1'), null);
+  assert.equal((await cache.get('u1')).entries.length, 13522);
+});
+
+test('reprise de plus de 24 h : ignorée, départ à 0', async () => {
+  const { c, cache, calls } = setup();
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 1, savedAt: 4242 - 24 * 3600 * 1000 - 1, total: 5, rarityCounts: {} });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.deepEqual(calls.loadAll[0].initialEntries, []);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('reprise de 24 h pile : acceptée ; enter() sans enregistrement reprend automatiquement', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: 500 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242 - 24 * 3600 * 1000, total: 500, newest: null, rarityCounts: {} });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 3);
+  assert.equal(calls.loadAll[0].initialEntries.length, 150);
+});
+
+test('reprise inutilisable (nextPage >= pageCount) : ignorée et effacée', async () => {
+  const { c, cache, calls } = setup();
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 1, savedAt: 4242, total: 5, rarityCounts: {} });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('onPage : putPartial toutes les 10 pages seulement', async () => {
+  const saved = [];
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      for (let page = 0; page < 25; page += 1) {
+        o.onPage({ page, entries: objs(0, (page + 1) * 2) });
+        await tick();
+        const p = await cache.getPartial('u1');
+        if (p && (!saved.length || saved.at(-1).nextPage !== p.nextPage)) saved.push(p);
+      }
+      throw new AbortedLoadError();
+    },
+  });
+  await c.enter();
+  assert.deepEqual(saved.map((p) => [p.nextPage, p.entries.length]), [[10, 20], [20, 40]]);
+  assert.equal(c.getState().mode, 'off');
+  assert.equal((await cache.getPartial('u1')).nextPage, 20); // pas de sauvegarde supplémentaire à l'abandon
+});
+
+test('mismatch final : clearPartial, pas de resumeAt', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async () => ({ entries: objs(0, 5) }),
+  });
+  await cache.putPartial('u1', { entries: objs(0, 50), nextPage: 1, pageCount: 271, savedAt: 4242, total: 13522, rarityCounts: {} });
+  await c.enter();
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(c.getState().resumeAt, null);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('exit pendant l\'échec : aucune écriture après la nouvelle génération', async () => {
+  const gate = deferred();
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      await gate.promise;
+      o.onPage({ page: 9, entries: objs(0, 500) });
+      throw new IncompleteLoadError({ reason: 'http', page: 10, status: 503 });
+    },
+  });
+  const p = c.enter();
+  await tick();
+  c.exit();
+  gate.resolve();
+  await p;
+  await tick();
+  assert.equal(await cache.getPartial('u1'), null);
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(c.getState().resumeAt, null);
+});
+
+test('attente d\'essai : progress.retryInMs renseigné puis remis à null', async () => {
+  const { c, states } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      o.onRetry({ page: 0, attempt: 1, waitMs: 5000 });
+      o.onProgress({ pagesRead: 1, pageCount: 271 });
+      throw new AbortedLoadError();
+    },
+  });
+  await c.enter();
+  const waiting = states.find((s) => s.progress?.retryInMs === 5000);
+  assert.ok(waiting);
+  assert.equal(waiting.progress.phase, 'full');
+  assert.equal(states.filter((s) => s.progress).at(-1).progress.retryInMs, null);
+});
+
+// --- Fix round 1 ---
+const withRarity = (total, rarityCounts) => fresh({ total, template: { collection: [], tagOptions: [], rarityCounts } });
+
+test('reprise : une suppression (total ou rareté en baisse) écarte le partiel', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => withRarity(499, { C: 299, R: 200 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242, total: 500, rarityCounts: { C: 300, R: 200 } });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.deepEqual(calls.loadAll[0].initialEntries, []);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('reprise : une rareté en baisse compensée par un ajout (total égal) est écartée', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => withRarity(500, { C: 299, R: 201 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242, total: 500, rarityCounts: { C: 300, R: 200 } });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+});
+
+test('reprise : de purs ajouts (total et rareté en hausse) gardent le partiel', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => withRarity(502, { C: 301, R: 200, E: 1 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 11, savedAt: 4242, total: 500, newest: null, rarityCounts: { C: 300, R: 200 } });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 3);
+  assert.equal(calls.loadAll[0].initialEntries.length, 150);
+});
+
+test('reprise : un partiel sans total/rarityCounts (ancien format) est écarté', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: 500 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242 });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('le partiel sauvegardé porte total et rarityCounts de la fraîcheur de départ', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => withRarity(13522, { C: 5 }),
+    loadAll: async (o) => {
+      o.onPage({ page: 9, entries: objs(0, 500) });
+      throw new IncompleteLoadError({ reason: 'http', page: 10, status: 503 });
+    },
+  });
+  await c.enter();
+  const p = await cache.getPartial('u1');
+  assert.equal(p.total, 13522);
+  assert.deepEqual(p.rarityCounts, { C: 5 });
+});
+
+test('pas de point de sauvegarde quand page + 1 === pageCount', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 500 }), // 10 pages
+    loadAll: async (o) => { o.onPage({ page: 9, entries: objs(0, 500) }); await tick(); return { entries: objs(0, 5) }; },
+  });
+  let wrote = false;
+  const orig = cache.putPartial;
+  cache.putPartial = async (...a) => { wrote = true; return orig(...a); };
+  await c.enter();
+  assert.equal(wrote, false);
+});
+
+test('échec sans aucune entrée gardée : pas de partiel, pas de resumeAt', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async () => { throw new IncompleteLoadError({ reason: 'http', page: 0, status: 503 }); },
+  });
+  await c.enter();
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(c.getState().resumeAt, null);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('échec d\'écriture du partiel : pas de resumeAt', async () => {
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 13522 }),
+    loadAll: async (o) => {
+      o.onPage({ page: 3, entries: objs(0, 200) });
+      throw new IncompleteLoadError({ reason: 'http', page: 4, status: 503 });
+    },
+  });
+  cache.putPartial = async () => { throw new Error('quota'); };
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(c.getState().resumeAt, null);
+});
+
+test('abandon() en ready : error unexpected, plus d\'interception, compteurs effacés', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec([makeEntry({ title: 'A' }), makeEntry({ title: 'A' })]));
+  await c.enter();
+  c.respond(LIST);
+  assert.notEqual(c.getState().pageCounts, null);
+  c.abandon();
+  const s = c.getState();
+  assert.equal(s.mode, 'error');
+  assert.equal(s.error, 'unexpected');
+  assert.equal(s.summary, null);
+  assert.equal(s.pageCounts, null);
+  assert.equal(s.loadedAt, null);
+  assert.equal(c.shouldIntercept(LIST), false);
+});
+
+test('abandon() en off : sans effet', () => {
+  const { c, states } = setup();
+  c.abandon();
+  assert.equal(c.getState().mode, 'off');
+  assert.equal(states.length, 0);
+});
+
+test('abandon() pendant une lecture : signal aborted, l\'abandon tardif ne change pas l\'erreur', async () => {
+  const d = deferred();
+  let signal;
+  const { c, cache } = setup({
+    loadNew: (o) => { signal = o.signal; return d.promise; },
+  });
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  const p = c.refresh();
+  await tick();
+  c.abandon();
+  assert.equal(signal.aborted, true);
+  d.reject(new AbortedLoadError());
+  await p;
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'unexpected');
+});
+
+test('enter() après abandon() : mode Doublons de nouveau servi', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  c.abandon();
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.getState().error, null);
+  assert.equal(c.shouldIntercept(LIST), true);
+});
+
+test('refresh() après abandon() : repart du cache, aucune lecture', async () => {
+  const { c, cache, calls } = setup();
+  await cache.put('u1', rec(ents(3)));
+  await c.enter();
+  c.abandon();
+  await c.refresh();
+  assert.equal(calls.loadAll.length + calls.loadNew.length, 0);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal(c.shouldIntercept(LIST), true);
+});
+
+// --- Favoris et étiquettes suivis ---
+const TAGS = [{ id: 't1', name: 'Rouge', color: '#f00', user_id: 'u1', created_at: '2026-01-01', cardCount: 9 }];
+const dupRec = (o = {}) => {
+  const older = makeEntry({ id: 'old', title: 'D', obtainedAt: '2026-10-01T00:00:00+00:00' });
+  const newer = makeEntry({ id: 'new', title: 'D', obtainedAt: '2026-11-01T00:00:00+00:00' });
+  return rec([older, newer], { template: { collection: [], tagOptions: TAGS }, ...o });
+};
+const listOf = (c, extra = '') => c.respond(`/api/my-collection?sort=rarity&page=0&stats=0${extra}`).collection;
+
+test('applyMutations : favori sur la non-représentante, vu tout de suite puis persisté', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', dupRec());
+  await c.enter();
+  assert.equal(listOf(c)[0].id, 'new');
+  const p = c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  const shown = listOf(c)[0];
+  assert.equal(shown.id, 'old');
+  assert.equal(shown.starred, true);
+  await p;
+  const stored = await cache.get('u1');
+  assert.equal(stored.entries.find((e) => e.id === 'old').starred, true);
+});
+
+test('applyMutations : tagAdd connu = objet complet sans cardCount, trouvé par tag_id', async () => {
+  const { c, cache } = setup({ fetchFreshness: async () => fresh({ template: { collection: [], tagOptions: TAGS } }) });
+  await cache.put('u1', dupRec());
+  await c.enter();
+  const p = c.applyMutations([{ kind: 'tagAdd', entryId: 'old', tagId: 't1' }, { kind: 'tagAdd', entryId: 'old', tagId: 't1' }]);
+  const hit = listOf(c, '&tag_id=t1');
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].id, 'old');
+  assert.deepEqual(hit[0].tags, [{ id: 't1', name: 'Rouge', color: '#f00', user_id: 'u1', created_at: '2026-01-01' }]);
+  await p;
+  const stored = await cache.get('u1');
+  assert.equal(stored.entries.find((e) => e.id === 'old').tags.length, 1);
+});
+
+test('applyMutations : tagAdd inconnu = { id }, puis tagRemove', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', dupRec());
+  await c.enter();
+  await c.applyMutations([{ kind: 'tagAdd', entryId: 'new', tagId: 'zz' }]);
+  assert.deepEqual((await cache.get('u1')).entries.find((e) => e.id === 'new').tags, [{ id: 'zz' }]);
+  await c.applyMutations([{ kind: 'tagRemove', entryId: 'new', tagId: 'zz' }]);
+  assert.deepEqual((await cache.get('u1')).entries.find((e) => e.id === 'new').tags, []);
+  assert.deepEqual(listOf(c, '&tag_id=zz'), []);
+});
+
+test('applyMutations : mode off, cache de lastUserId modifié puis servi à enter()', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', dupRec());
+  await cache.setLastUserId('u1');
+  await c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+  await c.enter();
+  assert.equal(listOf(c)[0].id, 'old');
+});
+
+test('applyMutations : deux appels sans await, les deux persistés', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', dupRec());
+  await c.enter();
+  const a = c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  const b = c.applyMutations([{ kind: 'tagAdd', entryId: 'new', tagId: 't1' }]);
+  await Promise.all([a, b]);
+  const stored = await cache.get('u1');
+  assert.equal(stored.entries.find((e) => e.id === 'old').starred, true);
+  assert.equal(stored.entries.find((e) => e.id === 'new').tags.length, 1);
+});
+
+test('applyMutations : entrée inconnue ignorée, freshness et loadedAt inchangés', async () => {
+  const { c, cache, states } = setup();
+  await cache.put('u1', dupRec());
+  await c.enter();
+  const n = states.length;
+  const before = await cache.get('u1');
+  await c.applyMutations([{ kind: 'starred', entryId: 'nope', value: true }]);
+  assert.deepEqual(await cache.get('u1'), before);
+  assert.equal(states.length, n);
+  await c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  const after = await cache.get('u1');
+  assert.equal(after.freshness, before.freshness);
+  assert.equal(after.loadedAt, before.loadedAt);
+  assert.equal(c.getState().stale, false);
+  assert.ok(states.length > n);
+});
+
+test('applyMutations : erreur de cache avalée et journalisée sans corps', async () => {
+  const logs = [];
+  const { c, cache } = setup({ log: (...a) => logs.push(a) });
+  await cache.put('u1', dupRec());
+  await c.enter();
+  cache.get = async () => { throw new Error('boom'); };
+  await c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  assert.ok(logs.some((a) => a[0] === 'mutation' && a[1].kind === 'starred' && a[1].entryId === 'old' && Object.keys(a[1]).length === 2));
+});
+
+// --- Fix round 1 : mutations pendant une lecture, file d'écriture, comptes ---
+const twoD = () => [
+  makeEntry({ id: 'old', title: 'D', obtainedAt: '2026-10-01T00:00:00+00:00' }),
+  makeEntry({ id: 'new', title: 'D', obtainedAt: '2026-11-01T00:00:00+00:00' }),
+];
+const STAR_OLD = [{ kind: 'starred', entryId: 'old', value: true }];
+
+test('mutation pendant une lecture complète : cache et vue la gardent', async () => {
+  const gate = deferred();
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 2 }),
+    loadAll: async () => { const e = twoD(); await gate.promise; return { entries: e }; },
+  });
+  const p = c.enter();
+  await tick(); await tick();
+  await c.applyMutations(STAR_OLD);
+  gate.resolve();
+  await p;
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+  assert.equal(listOf(c)[0].id, 'old');
+});
+
+test('mutation entre fetchFreshness et cache.get dans enter()', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(twoD()));
+  await cache.setLastUserId('u1');
+  const p = c.enter();
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  const m = c.applyMutations(STAR_OLD);
+  await Promise.all([p, m]);
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+  assert.equal(listOf(c)[0].id, 'old');
+  await c.refresh();
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+});
+
+test('mutation pendant une lecture : le partiel sauvegardé la contient', async () => {
+  const gate = deferred();
+  const e = twoD();
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 2 }),
+    loadAll: async (o) => {
+      o.onPage({ page: 0, entries: e });
+      await gate.promise;
+      throw Object.assign(new Error('x'), { name: 'IncompleteLoadError', reason: 'network', page: 0 });
+    },
+  });
+  const p = c.enter();
+  await tick(); await tick();
+  await c.applyMutations(STAR_OLD);
+  gate.resolve();
+  await p;
+  const partial = await cache.getPartial('u1');
+  assert.equal(partial.entries.find((x) => x.id === 'old').starred, true);
+});
+
+test('mutation sans lecture : le partiel existant la reçoit aussi', async () => {
+  const { c, cache } = setup();
+  await cache.setLastUserId('u1');
+  await cache.putPartial('u1', { entries: twoD(), nextPage: 1, pageCount: 3, savedAt: 1, total: 2, rarityCounts: {} });
+  await c.applyMutations(STAR_OLD);
+  assert.equal((await cache.getPartial('u1')).entries.find((x) => x.id === 'old').starred, true);
+});
+
+test('la persistance ne défait pas un refresh incrémental qui finit (balayage)', async () => {
+  for (let k = 0; k < 40; k++) {
+    const gate = deferred();
+    let calls = 0;
+    const { c, cache } = setup({
+      fetchFreshness: async () => (calls++ === 0 ? fresh({ total: 2 }) : fresh({ total: 3, freshness: 'F2' })),
+      loadNew: async () => { await gate.promise; return { entries: [makeEntry({ id: 'n3', title: 'Q' })] }; },
+    });
+    await cache.put('u1', rec(twoD()));
+    await c.enter();
+    const r = c.refresh();
+    await tick();
+    gate.resolve();
+    for (let i = 0; i < k; i++) await Promise.resolve();
+    const m = c.applyMutations(STAR_OLD);
+    await Promise.all([r, m]);
+    const s = await cache.get('u1');
+    assert.equal(s.entries.length, 3, `k=${k}`);
+    assert.equal(s.freshness, 'F2', `k=${k}`);
+    assert.equal(s.entries.find((e) => e.id === 'old').starred, true, `k=${k}`);
+  }
+});
+
+test('changement de compte : l\'entrée est cherchée aussi dans le cache de lastUserId', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', rec(twoD()));
+  await cache.setLastUserId('u1');
+  await c.enter();
+  await cache.put('u2', rec([makeEntry({ id: 'other', title: 'Z' })]));
+  await cache.setLastUserId('u2');
+  await c.applyMutations([{ kind: 'starred', entryId: 'other', value: true }]);
+  assert.equal((await cache.get('u2')).entries[0].starred, true);
+});
+
+test('onState qui lève : la persistance a quand même lieu', async () => {
+  const { c, cache } = setup({ onState: () => { if (throwing) throw new Error('vue'); } });
+  let throwing = false;
+  await cache.put('u1', rec(twoD()));
+  await c.enter();
+  throwing = true;
+  await c.applyMutations(STAR_OLD);
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+});
+
+test('erreur de cache : mutation:cache-error journalisé', async () => {
+  const logs = [];
+  const { c, cache } = setup({ log: (...a) => logs.push(a) });
+  await cache.put('u1', rec(twoD()));
+  await c.enter();
+  cache.get = async () => { throw new Error('boom'); };
+  await c.applyMutations(STAR_OLD);
+  assert.ok(logs.some((a) => a[0] === 'mutation:cache-error'));
+});
+
+test('partiel effacé au mismatch : une mutation en file ne le fait pas revenir', async () => {
+  const base = createCache(memoryStore());
+  let holdGP = null;
+  const cache = { ...base, getPartial: async (u) => { const v = await base.getPartial(u); if (holdGP) await holdGP.promise; return v; } };
+  const total = siteApi.SITE.PAGE_SIZE * 3;
+  const two = [makeEntry({ id: 'old', title: 'D', obtainedAt: '2026-10-01T00:00:00+00:00' }),
+    makeEntry({ id: 'new', title: 'D', obtainedAt: '2026-11-01T00:00:00+00:00' })];
+  await base.putPartial('u1', { entries: two, nextPage: 1, pageCount: 3, savedAt: 4242, total, rarityCounts: {} });
+  const gateLoad = deferred();
+  const { c } = setup({
+    cache,
+    fetchFreshness: async () => fresh({ total }),
+    loadAll: async (o) => { await gateLoad.promise; return { entries: o.initialEntries }; },
+  });
+  const p = c.enter();
+  await tick(); await tick();
+  holdGP = deferred();
+  const m = c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  await tick(); await tick();
+  gateLoad.resolve();
+  for (let i = 0; i < 20; i += 1) await tick(); // lecture finie, mismatch, effacement demandé
+  const h = holdGP; holdGP = null; h.resolve(); // la mutation en file réécrit le partiel
+  await p;
+  await m;
+  assert.equal(await base.getPartial('u1'), null);
+});
+
+// ---- Relecture finale : lecture avec le vrai chargeur contre un faux serveur ----
+
+function fakeServer(entries) {
+  let rows = entries.slice();
+  const counts = () => rows.reduce((a, e) => ((a[e.card.rarity] = (a[e.card.rarity] || 0) + 1), a), {});
+  return {
+    set(r) { rows = r; },
+    remove(id) { rows = rows.filter((e) => e.id !== id); },
+    rows: () => rows,
+    page(p, sort) {
+      const src = sort === 'added' ? rows.slice().sort((a, b) => (a.obtained_at < b.obtained_at ? 1 : -1)) : rows;
+      return src.slice(p * 50, p * 50 + 50);
+    },
+    freshness() {
+      return siteApi.readFreshness({ collection: this.page(0, 'rarity'), total: rows.length, rarityCounts: counts(), tagOptions: [] });
+    },
+    newest() {
+      return siteApi.readNewest({ collection: this.page(0, 'added') });
+    },
+  };
+}
+
+function realSetup(srv, onFetch = () => {}, over = {}) {
+  const base = { parseList: siteApi.parseList, sleep: async () => {}, now: () => 0, log: () => {} };
+  const fetchPage = (sort) => async (page) => {
+    const list = srv.page(page, sort);
+    onFetch(page, sort);
+    return { ok: true, status: 200, json: async () => ({ collection: list }), headers: { get: () => null } };
+  };
+  return setup({
+    fetchFreshness: async () => srv.freshness(),
+    fetchNewest: async () => srv.newest(),
+    IncompleteLoadError: L.IncompleteLoadError,
+    loadAll: (o) => L.loadAllPages({ ...base, ...o, fetchPage: fetchPage('rarity') }),
+    loadNew: (o) => L.loadNewEntries({ ...base, ...o, fetchPage: fetchPage('added') }),
+    ...over,
+  });
+}
+
+test('carte retirée pendant la lecture complète : lecture incomplète, rien en cache', async () => {
+  const entries = Array.from({ length: 200 }, (_, i) => makeEntry({ id: `e${i}`, title: i === 120 || i === 100 ? 'Dup' : `t${i}` }));
+  const srv = fakeServer(entries);
+  const { c, cache } = realSetup(srv, (page, sort) => { if (sort === 'rarity' && page === 1) srv.remove('e10'); });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('user-A'), null);
+  assert.equal(await cache.getPartial('user-A'), null);
+});
+
+test('reprise : une carte retirée depuis la sauvegarde du partiel invalide le partiel', async () => {
+  const entries = ents(150);
+  const srv = fakeServer(entries.slice(1)); // 149 : e0 a été retirée depuis la sauvegarde
+  const fr = srv.freshness();
+  const { c, cache, calls } = realSetup(srv, () => {}, { fetchFreshness: async () => fr });
+  await cache.putPartial('user-A', { entries: entries.slice(0, 50), nextPage: 1, pageCount: 3, savedAt: 4242, total: 150, rarityCounts: { C: 150 } });
+  await c.enter();
+  assert.equal(await cache.getPartial('user-A'), null);
+  assert.equal(c.getState().mode, 'ready'); // relu depuis la page 0
+});
+
+test('lecture complète : total égal mais comptes par rareté différents -> mismatch', async () => {
+  const e = ents(4);
+  e[3].card.rarity = 'R';
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 4, template: { collection: [], tagOptions: [], rarityCounts: { C: 4 } } }),
+    loadAll: async () => ({ entries: e.slice(0, 3) }),
+    loadNew: async () => ({ entries: [e[3]] }),
+  });
+  await c.enter();
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('u1'), null);
+});
+
+test('rafraîchissement incrémental : total égal mais comptes par rareté différents -> lecture complète', async () => {
+  const known = ents(3, 'k');
+  const added = makeEntry({ id: 'n0', title: 'n0' });
+  const truth = [makeEntry({ id: 't0', title: 't0' }), makeEntry({ id: 't1', title: 't1' }),
+    makeEntry({ id: 't2', title: 't2', rarity: 'R' }), makeEntry({ id: 't3', title: 't3', rarity: 'R' })];
+  let tpl = { collection: [], tagOptions: [], rarityCounts: { C: 3 } };
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: tpl.rarityCounts.C + (tpl.rarityCounts.R ?? 0), template: tpl }),
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: truth }; },
+    loadNew: async () => ({ entries: calls.loadNew.push(1) === 1 ? [added] : [] }),
+  });
+  await cache.put('u1', { entries: known.slice(), total: 3, freshness: 'old', template: tpl, loadedAt: 1 });
+  await c.enter();
+  tpl = { collection: [], tagOptions: [], rarityCounts: { C: 2, R: 2 } }; // total 4, mais ni C:4 ni les 3 C connus + 1
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 1);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('u1')).entries.length, 4);
+  assert.deepEqual((await cache.get('u1')).entries.map((e) => e.id), ['t0', 't1', 't2', 't3']);
+});
+
+test('rafraîchissement incrémental : total concordant et raretés concordantes -> fusion sans lecture complète', async () => {
+  const known = ents(3, 'k');
+  const added = makeEntry({ id: 'n0', title: 'n0' });
+  const tpl = { collection: [], tagOptions: [], rarityCounts: { C: 4 } };
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ total: 4, template: tpl }),
+    loadAll: async (o) => { calls.loadAll.push(o); return { entries: [] }; },
+    loadNew: async () => ({ entries: [added] }),
+  });
+  await cache.put('u1', { entries: known.slice(), total: 3, freshness: 'old', template: tpl, loadedAt: 1 });
+  await c.enter();
+  await c.refresh();
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('u1')).entries.length, 4);
+});
+
+test('rafraîchissement : carte ajoutée entre deux pages de loadNew, aucun doublon fantôme servi', async () => {
+  const at = (sec) => new Date(Date.UTC(2026, 10, 1) + sec * 1000).toISOString();
+  const known = Array.from({ length: 100 }, (_, i) => makeEntry({ id: `k${i}`, title: `k${i}`, obtainedAt: at(-1000 - i) }));
+  let added = Array.from({ length: 60 }, (_, i) => makeEntry({ id: `n${i}`, title: `n${i}`, obtainedAt: at(-i) }));
+  const srv = fakeServer([]);
+  srv.set([...added, ...known]);
+  const shift = (page, sort) => {
+    if (sort === 'added' && page === 0 && added.length === 60) {
+      added = [makeEntry({ id: 'NEW', title: 'NEW', obtainedAt: at(10) }), ...added];
+      srv.set([...added, ...known]);
+    }
+  };
+  const { c, cache } = realSetup(srv, shift);
+  await cache.put('user-A', { entries: known.slice(), total: 100, freshness: 'old', template: { tagOptions: [] }, loadedAt: 0 });
+  await cache.setLastUserId('user-A');
+  await c.enter();
+  await c.refresh();
+  const ids = (await cache.get('user-A')).entries.map((e) => e.id);
+  assert.equal(new Set(ids).size, ids.length);
+  if (c.getState().mode === 'ready' && !c.getState().error) {
+    const stats = c.respond('/api/my-collection/stats?sort=rarity');
+    assert.equal(stats.total, 0); // aucun doublon dans ces données : pas de ×2 fantôme
+  }
+});
+
+test('identifiant de compte absent et collection non vide : aucune lecture, erreur inattendue', async () => {
+  const { c, calls, states } = setup({ fetchFreshness: async () => fresh({ userId: null, total: 5 }) });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'unexpected');
+  c.exit();
+  await c.enter();
+  assert.equal(c.getState().error, 'unexpected');
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(calls.loadNew.length, 0);
+  assert.ok(states.length > 0);
+});
+
+test('autre compte pendant un rafraîchissement : les comptes des badges de l\'ancien compte sont oubliés', async () => {
+  const old = ents(3, 'o');
+  let user = 'u1';
+  const gate = deferred();
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ userId: user, total: 3 }),
+    loadNew: async () => ({ entries: [] }),
+    loadAll: async (o) => { calls.loadAll.push(o); await gate.promise; return { entries: ents(3, 'm') }; },
+  });
+  await cache.put('u1', rec(old, { total: 3 }));
+  await c.enter();
+  c.respond(LIST);
+  assert.notEqual(c.getState().pageCounts, null);
+  user = 'u2';
+  const p = c.refresh();
+  for (let i = 0; i < 10; i += 1) await tick();
+  assert.equal(c.getState().mode, 'loading');
+  assert.equal(c.getState().pageCounts, null);
+  assert.equal(c.getState().summary, null);
+  gate.resolve();
+  await p;
+});
+
+test('pageCounts vaut null quand rien n\'est servi (erreur sans enregistrement)', async () => {
+  const { c } = setup({ fetchFreshness: async () => { throw new Error('x'); } });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().pageCounts, null);
+});
+
+// ---- Retrait masqué par un ajout pendant une lecture complète ; motif du mismatch ----
+
+const D_OLD = '2026-11-01T00:00:00+00:00';
+const D_NEW = '2026-11-02T00:00:00+00:00';
+const oldEntries = (n) => Array.from({ length: n }, (_, i) => makeEntry({ id: `e${i}`, title: i === 120 || i === 100 ? 'Dup' : `t${i}`, obtainedAt: D_OLD }));
+const newCard = (id) => makeEntry({ id, title: id, obtainedAt: D_NEW });
+
+test('échange même rareté pendant la lecture (retrait + ajout trié après le curseur) : error incomplete', async () => {
+  const srv = fakeServer(oldEntries(200));
+  const logs = [];
+  let once = false;
+  const { c, cache } = realSetup(srv, (page, sort) => {
+    if (sort === 'rarity' && page === 0 && !once) { once = true; srv.remove('e10'); srv.set([...srv.rows(), newCard('Z')]); }
+  }, { log: (ev, d) => logs.push([ev, d]) });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('user-A'), null);
+  assert.deepEqual(logs.filter(([e]) => e === 'load:mismatch'), [['load:mismatch', { reason: 'masked' }]]);
+});
+
+test('paquet ouvert pendant la lecture (ajouts seuls, plus récents) : ready', async () => {
+  const srv = fakeServer(oldEntries(200));
+  let once = false;
+  const { c, cache } = realSetup(srv, (page, sort) => {
+    if (sort === 'rarity' && page === 0 && !once) { once = true; srv.set([...srv.rows(), newCard('Z1'), newCard('Z2')]); }
+  });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.equal((await cache.get('user-A')).entries.length, 202);
+});
+
+test('fraîcheur sans entrée lisible (newest null) : seuls les contrôles actuels, l\'échange passe', async () => {
+  const srv = fakeServer(oldEntries(200));
+  let once = false;
+  const { c } = realSetup(srv, (page, sort) => {
+    if (sort === 'rarity' && page === 0 && !once) { once = true; srv.remove('e10'); srv.set([...srv.rows(), newCard('Z')]); }
+  }, { fetchNewest: async () => null });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+});
+
+test('reprise : partiel avec newest, retrait masqué entre la sauvegarde et la fin -> mismatch', async () => {
+  const entries = oldEntries(200);
+  const srv = fakeServer(entries);
+  const fr = srv.freshness();
+  const logs = [];
+  let once = false;
+  const { c, cache } = realSetup(srv, (page, sort) => {
+    if (sort === 'rarity' && page === 1 && !once) { once = true; srv.remove('e10'); srv.set([...srv.rows(), newCard('Z')]); }
+  }, { fetchFreshness: async () => fr, log: (ev, d) => logs.push([ev, d]) });
+  await cache.putPartial('user-A', { entries: entries.slice(0, 50), nextPage: 1, pageCount: 4, savedAt: 4242,
+    total: 200, newest: Date.parse(D_OLD), rarityCounts: { C: 200 } });
+  await c.enter();
+  assert.equal(c.getState().error, 'incomplete');
+  assert.equal(await cache.get('user-A'), null);
+  assert.ok(logs.some(([e, d]) => e === 'load:mismatch' && d.reason === 'masked'));
+});
+
+test('reprise : partiel sans newest numérique (ancien format) -> écarté, lecture depuis la page 0', async () => {
+  const { c, cache, calls } = setup({ fetchFreshness: async () => fresh({ total: 500, newest: 1 }) });
+  await cache.putPartial('u1', { entries: objs(0, 150), nextPage: 3, pageCount: 10, savedAt: 4242, total: 500, rarityCounts: {} });
+  await c.enter();
+  assert.equal(calls.loadAll[0].startPage, 0);
+  assert.equal(await cache.getPartial('u1'), null);
+});
+
+test('les instantanés partiels gardent newest', async () => {
+  const entries = ents(500);
+  const { c, cache } = setup({
+    fetchFreshness: async () => fresh({ total: 500, newest: 123 }),
+    loadAll: async (o) => {
+      o.onPage({ page: 9, entries: entries.slice(0, 500) });
+      await tick(); await tick();
+      throw Object.assign(new L.IncompleteLoadError({ reason: 'http', page: 12 }), {});
+    },
+    IncompleteLoadError: L.IncompleteLoadError,
+  });
+  await c.enter();
+  assert.equal((await cache.getPartial('u1')).newest, 123);
+});
+
+test('motif du mismatch journalisé : removal, total, rarity', async () => {
+  const run = async (over, load) => {
+    const logs = [];
+    const entries = ents(5);
+    const { c } = setup({
+      log: (ev, d) => logs.push([ev, d]), IncompleteLoadError: L.IncompleteLoadError,
+      loadAll: async () => ({ entries: entries.slice(0, 4) }), loadNew: async () => ({ entries: [entries[4]] }), ...over,
+    });
+    await c.enter();
+    return logs.filter(([e]) => e === 'load:mismatch').map(([, d]) => d);
+  };
+  assert.deepEqual(await run({ fetchFreshness: async () => fresh({ total: 13522 }) }), [{ reason: 'total' }]);
+  assert.deepEqual(await run({ fetchFreshness: async () => fresh({ total: 5, template: { collection: [], tagOptions: [], rarityCounts: { R: 5 } } }) }), [{ reason: 'rarity' }]);
+  let n = 0;
+  assert.deepEqual(await run({ fetchFreshness: async () => (n++ === 0 ? fresh({ total: 6 }) : fresh({ total: 5 })) }), [{ reason: 'removal' }]);
+});
+
+test('deux reprises avec un paquet ouvert entre les deux : la troisième visite finit prête (pas de faux « masked »)', async () => {
+  const L = require('../extension/src/loader.js');
+  const at = (s) => new Date(Date.UTC(2026, 9, 1) + s * 1000).toISOString().replace('Z', '+00:00');
+  let rows = Array.from({ length: 1200 }, (_, i) => makeEntry({ id: `e${i}`, title: `t${i}`, obtainedAt: at(-i) }));
+  const byAdded = () => rows.slice().sort((a, b) => Date.parse(b.obtained_at) - Date.parse(a.obtained_at));
+  const counts = () => rows.reduce((a, e) => ((a[e.card.rarity] = (a[e.card.rarity] || 0) + 1), a), {});
+  const cache = createCache(memoryStore());
+  const visit = (stopAt) => {
+    const logs = [];
+    const base = { parseList: siteApi.parseList, sleep: async () => {}, now: () => 0, log: () => {} };
+    let c;
+    const fetchPage = (sort) => async (page, signal) => {
+      if (sort === 'rarity' && page === stopAt) c.exit(); // l'utilisateur quitte la page après un point de sauvegarde
+      if (signal?.aborted) throw Object.assign(new Error('a'), { name: 'AbortError' });
+      const list = sort === 'added' ? byAdded() : rows;
+      return { ok: true, status: 200, json: async () => ({ collection: list.slice(page * 50, page * 50 + 50) }), headers: { get: () => null } };
+    };
+    c = createController({
+      site: { ...siteApi, PAGE_SIZE: 50 }, dup: dupApi, cache, now: () => 1000, onState: () => {},
+      log: (ev, d) => logs.push([ev, d]), IncompleteLoadError,
+      fetchFreshness: async () => siteApi.readFreshness({ collection: rows.slice(0, 50), total: rows.length, rarityCounts: counts(), tagOptions: [] }),
+      fetchNewest: async () => siteApi.readNewest({ collection: byAdded().slice(0, 50) }),
+      loadAll: (o) => L.loadAllPages({ ...base, ...o, fetchPage: fetchPage('rarity') }),
+      loadNew: (o) => L.loadNewEntries({ ...base, ...o, fetchPage: fetchPage('added') }),
+    });
+    return { c, logs };
+  };
+  const v1 = visit(12);
+  await v1.c.enter(); await new Promise((r) => setTimeout(r, 10));
+  rows = [...rows, makeEntry({ id: 'P1', title: 'P1', obtainedAt: at(100) }), makeEntry({ id: 'P2', title: 'P2', obtainedAt: at(100) })];
+  const v2 = visit(21);
+  await v2.c.enter(); await new Promise((r) => setTimeout(r, 10));
+  const v3 = visit(-1);
+  await v3.c.enter();
+  assert.deepEqual(v3.logs.filter(([e]) => e === 'load:mismatch'), []);
+  assert.equal(v3.c.getState().mode, 'ready');
+});
+
+test('fetchNewest échoue : lecture complète menée quand même, contrôle des retraits masqués sauté', async () => {
+  const srv = fakeServer(oldEntries(200));
+  const logs = [];
+  const { c } = realSetup(srv, () => {}, { fetchNewest: async () => { throw new Error('réseau'); }, log: (ev, d) => logs.push([ev, d]) });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.ok(logs.some(([e]) => e === 'newest:unknown'));
+});
+
+test('fetchNewest est appelé après la fraîcheur, une fois par lecture complète, jamais sur cache frais', async () => {
+  const srv = fakeServer(oldEntries(200));
+  const order = [];
+  const { c } = realSetup(srv, () => {}, {
+    fetchFreshness: async () => { order.push('fresh'); return srv.freshness(); },
+    fetchNewest: async () => { order.push('newest'); return srv.newest(); },
+  });
+  await c.enter();
+  assert.deepEqual(order.slice(0, 2), ['fresh', 'newest']);
+  assert.equal(order.filter((x) => x === 'newest').length, 1);
+  order.length = 0;
+  c.exit();
+  await c.enter(); // cache frais : un seul appel de fraîcheur
+  assert.deepEqual(order, ['fresh']);
+});
