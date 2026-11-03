@@ -1,3 +1,6 @@
 .superpowers/
 .impeccable/
 dist/
+
+# captures brutes de Victor (sources des visuels du Store, non versionnées)
+imgs/
