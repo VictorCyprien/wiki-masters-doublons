@@ -11,6 +11,7 @@
       "js": [
         "src/site-api.js",
         "src/duplicates.js",
+        "src/mutations.js",
         "src/loader.js",
         "src/cache.js",
         "src/interceptor.js",

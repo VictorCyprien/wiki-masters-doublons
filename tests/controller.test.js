@@ -817,3 +817,100 @@ test('refresh() après abandon() : repart du cache, aucune lecture', async () =>
   assert.equal(c.getState().mode, 'ready');
   assert.equal(c.shouldIntercept(LIST), true);
 });
+
+// --- Favoris et étiquettes suivis ---
+const TAGS = [{ id: 't1', name: 'Rouge', color: '#f00', user_id: 'u1', created_at: '2026-01-01', cardCount: 9 }];
+const dupRec = (o = {}) => {
+  const older = makeEntry({ id: 'old', title: 'D', obtainedAt: '2026-10-01T00:00:00+00:00' });
+  const newer = makeEntry({ id: 'new', title: 'D', obtainedAt: '2026-11-01T00:00:00+00:00' });
+  return rec([older, newer], { template: { collection: [], tagOptions: TAGS }, ...o });
+};
+const listOf = (c, extra = '') => c.respond(`/api/my-collection?sort=rarity&page=0&stats=0${extra}`).collection;
+
+test('applyMutations : favori sur la non-représentante, vu tout de suite puis persisté', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', dupRec());
+  await c.enter();
+  assert.equal(listOf(c)[0].id, 'new');
+  const p = c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  const shown = listOf(c)[0];
+  assert.equal(shown.id, 'old');
+  assert.equal(shown.starred, true);
+  await p;
+  const stored = await cache.get('u1');
+  assert.equal(stored.entries.find((e) => e.id === 'old').starred, true);
+});
+
+test('applyMutations : tagAdd connu = objet complet sans cardCount, trouvé par tag_id', async () => {
+  const { c, cache } = setup({ fetchFreshness: async () => fresh({ template: { collection: [], tagOptions: TAGS } }) });
+  await cache.put('u1', dupRec());
+  await c.enter();
+  const p = c.applyMutations([{ kind: 'tagAdd', entryId: 'old', tagId: 't1' }, { kind: 'tagAdd', entryId: 'old', tagId: 't1' }]);
+  const hit = listOf(c, '&tag_id=t1');
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].id, 'old');
+  assert.deepEqual(hit[0].tags, [{ id: 't1', name: 'Rouge', color: '#f00', user_id: 'u1', created_at: '2026-01-01' }]);
+  await p;
+  const stored = await cache.get('u1');
+  assert.equal(stored.entries.find((e) => e.id === 'old').tags.length, 1);
+});
+
+test('applyMutations : tagAdd inconnu = { id }, puis tagRemove', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', dupRec());
+  await c.enter();
+  await c.applyMutations([{ kind: 'tagAdd', entryId: 'new', tagId: 'zz' }]);
+  assert.deepEqual((await cache.get('u1')).entries.find((e) => e.id === 'new').tags, [{ id: 'zz' }]);
+  await c.applyMutations([{ kind: 'tagRemove', entryId: 'new', tagId: 'zz' }]);
+  assert.deepEqual((await cache.get('u1')).entries.find((e) => e.id === 'new').tags, []);
+  assert.deepEqual(listOf(c, '&tag_id=zz'), []);
+});
+
+test('applyMutations : mode off, cache de lastUserId modifié puis servi à enter()', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', dupRec());
+  await cache.setLastUserId('u1');
+  await c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  assert.equal((await cache.get('u1')).entries.find((e) => e.id === 'old').starred, true);
+  await c.enter();
+  assert.equal(listOf(c)[0].id, 'old');
+});
+
+test('applyMutations : deux appels sans await, les deux persistés', async () => {
+  const { c, cache } = setup();
+  await cache.put('u1', dupRec());
+  await c.enter();
+  const a = c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  const b = c.applyMutations([{ kind: 'tagAdd', entryId: 'new', tagId: 't1' }]);
+  await Promise.all([a, b]);
+  const stored = await cache.get('u1');
+  assert.equal(stored.entries.find((e) => e.id === 'old').starred, true);
+  assert.equal(stored.entries.find((e) => e.id === 'new').tags.length, 1);
+});
+
+test('applyMutations : entrée inconnue ignorée, freshness et loadedAt inchangés', async () => {
+  const { c, cache, states } = setup();
+  await cache.put('u1', dupRec());
+  await c.enter();
+  const n = states.length;
+  const before = await cache.get('u1');
+  await c.applyMutations([{ kind: 'starred', entryId: 'nope', value: true }]);
+  assert.deepEqual(await cache.get('u1'), before);
+  assert.equal(states.length, n);
+  await c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  const after = await cache.get('u1');
+  assert.equal(after.freshness, before.freshness);
+  assert.equal(after.loadedAt, before.loadedAt);
+  assert.equal(c.getState().stale, false);
+  assert.ok(states.length > n);
+});
+
+test('applyMutations : erreur de cache avalée et journalisée sans corps', async () => {
+  const logs = [];
+  const { c, cache } = setup({ log: (...a) => logs.push(a) });
+  await cache.put('u1', dupRec());
+  await c.enter();
+  cache.get = async () => { throw new Error('boom'); };
+  await c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  assert.ok(logs.some((a) => a[0] === 'mutation' && a[1].kind === 'starred' && a[1].entryId === 'old' && Object.keys(a[1]).length === 2));
+});

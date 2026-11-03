@@ -35,13 +35,16 @@ test('normale et shiny ne fusionnent pas', () => {
   );
 });
 
-test('représentante : non starred de préférence, puis la plus récente', () => {
-  const starredNew = makeEntry({ id: 's', title: 'X', starred: true, obtainedAt: '2026-11-02T00:00:00+00:00' });
-  const plain = makeEntry({ id: 'p', title: 'X', obtainedAt: '2026-10-01T00:00:00+00:00' });
-  assert.equal(groupDuplicates([starredNew, plain])[0].entry.id, 'p');
+test('représentante : starred de préférence, puis la plus récente', () => {
+  const starredOld = makeEntry({ id: 's', title: 'X', starred: true, obtainedAt: '2026-10-01T00:00:00+00:00' });
+  const plainNew = makeEntry({ id: 'p', title: 'X', obtainedAt: '2026-11-02T00:00:00+00:00' });
+  assert.equal(groupDuplicates([starredOld, plainNew])[0].entry.id, 's');
   const old = makeEntry({ id: 'o', title: 'Y', obtainedAt: '2026-10-01T00:00:00+00:00' });
   const recent = makeEntry({ id: 'r', title: 'Y', obtainedAt: '2026-10-05T00:00:00+00:00' });
   assert.equal(groupDuplicates([old, recent])[0].entry.id, 'r');
+  const s1 = makeEntry({ id: 's1', title: 'Z', starred: true, obtainedAt: '2026-10-01T00:00:00+00:00' });
+  const s2 = makeEntry({ id: 's2', title: 'Z', starred: true, obtainedAt: '2026-10-05T00:00:00+00:00' });
+  assert.equal(groupDuplicates([s1, s2])[0].entry.id, 's2');
 });
 
 test('représentante : dates comparées numériquement, pas en chaînes', () => {

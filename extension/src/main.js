@@ -22,6 +22,11 @@
       respond: async (u) => W.controller.respond(u),
       isWatched: (u) => W.classifyUrl(u) === 'list',
       onSettled: () => { waiters.forEach((w) => w()); },
+      // Favori ou étiquette changé sur le site : le cache et l'enregistrement servi suivent.
+      onResponse: (r) => {
+        const list = W.parseMutation(r);
+        if (list.length && controller !== null) controller.applyMutations(list);
+      },
       // Réponse substituée en échec : le site a reçu la vraie liste ; on quitte le service du cache.
       onFallback: () => { if (controller !== null) controller.abandon(); },
       log,

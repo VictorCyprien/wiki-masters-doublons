@@ -20,7 +20,7 @@
 
   function installInterceptor({
     target, shouldIntercept, respond,
-    isWatched = () => false, onSettled = () => {}, onFallback = () => {}, log = () => {},
+    isWatched = () => false, onSettled = () => {}, onResponse = () => {}, onFallback = () => {}, log = () => {},
   }) {
     const originalFetch = target.fetch;
     const safeLog = (...a) => { try { log(...a); } catch { /* ignoré */ } };
@@ -36,8 +36,25 @@
         try { onSettled(url, intercepted); } catch { /* ignoré */ }
       };
 
+      // Appel non-GET non substitué : le rappel voit url, méthode, corps texte et statut (jamais d'en-tête).
+      const observe = (result) => {
+        let method = 'GET';
+        let body = null;
+        try {
+          const m = (init && init.method) || (input && typeof input === 'object' && input.method) || 'GET';
+          method = String(m).toUpperCase();
+          if (method === 'GET' || method === 'HEAD') return;
+          body = init && typeof init.body === 'string' ? init.body : null;
+          if (!isThenable(result)) return;
+        } catch { return; }
+        result.then((res) => {
+          try { onResponse({ url, method, body, status: res && res.status }); } catch { /* ignoré */ }
+        }, () => {});
+      };
+
       const passthrough = () => {
         const result = originalFetch.apply(self, args);
+        observe(result);
         if (watched) {
           if (isThenable(result)) {
             // branche latérale : la valeur et le rejet vus par le site restent ceux de `result`

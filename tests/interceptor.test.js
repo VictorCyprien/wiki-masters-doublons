@@ -199,3 +199,66 @@ test('onFallback : jamais appelé sans échec', async () => {
   await b.target.fetch('/x');
   assert.equal(n, 0);
 });
+
+const okFetch = (status = 204) => () => Promise.resolve({ status });
+function withOnResponse(fetchImpl, over = {}) {
+  const target = { fetch: fetchImpl };
+  const seen = [];
+  installInterceptor({
+    target, shouldIntercept: () => false, respond: () => ({}),
+    onResponse: (r) => seen.push(r), ...over,
+  });
+  return { target, seen };
+}
+
+test('onResponse : PATCH non intercepté reçoit url, méthode, corps, statut', async () => {
+  const { target, seen } = withOnResponse(okFetch(204));
+  await target.fetch('/rest/v1/user_cards?id=eq.a', { method: 'patch', body: '{"starred":true}', headers: { apikey: 'secret' } });
+  assert.deepEqual(seen, [{ url: '/rest/v1/user_cards?id=eq.a', method: 'PATCH', body: '{"starred":true}', status: 204 }]);
+});
+
+test('onResponse : GET et HEAD jamais', async () => {
+  const { target, seen } = withOnResponse(okFetch(200));
+  await target.fetch('/a');
+  await target.fetch('/a', { method: 'GET' });
+  await target.fetch('/a', { method: 'HEAD' });
+  assert.deepEqual(seen, []);
+});
+
+test('onResponse : appel intercepté jamais', async () => {
+  const { target, seen } = withOnResponse(okFetch(200), { shouldIntercept: () => true, respond: () => ({}) });
+  await target.fetch('/a', { method: 'POST', body: 'x' });
+  assert.deepEqual(seen, []);
+});
+
+test('onResponse : le rappel qui lève ne change pas la valeur de l\'original', async () => {
+  const marker = { status: 201 };
+  const { target } = withOnResponse(() => Promise.resolve(marker), { onResponse: () => { throw new Error('x'); } });
+  assert.equal(await target.fetch('/a', { method: 'POST', body: 'x' }), marker);
+});
+
+test('onResponse : rejet réseau préservé, rappel non appelé', async () => {
+  const err = new Error('net');
+  const { target, seen } = withOnResponse(() => Promise.reject(err));
+  await assert.rejects(target.fetch('/a', { method: 'DELETE' }), err);
+  assert.deepEqual(seen, []);
+});
+
+test('onResponse : Request DELETE, corps null', async () => {
+  const { target, seen } = withOnResponse(okFetch(204));
+  await target.fetch({ url: '/rest/v1/user_card_tags?x=1', method: 'DELETE' });
+  assert.deepEqual(seen, [{ url: '/rest/v1/user_card_tags?x=1', method: 'DELETE', body: null, status: 204 }]);
+});
+
+test('onResponse : corps non texte donne null', async () => {
+  const { target, seen } = withOnResponse(okFetch(200));
+  await target.fetch('/a', { method: 'POST', body: new Uint8Array([1]) });
+  assert.equal(seen[0].body, null);
+});
+
+test('onResponse : vu avant le then du site', async () => {
+  const order = [];
+  const { target } = withOnResponse(okFetch(204), { onResponse: () => order.push('rappel') });
+  await target.fetch('/a', { method: 'POST', body: '{}' }).then(() => order.push('site'));
+  assert.deepEqual(order, ['rappel', 'site']);
+});

@@ -412,7 +412,61 @@
       throw new Error('URL non gérée');
     }
 
-    return { enter, exit, abandon, refresh, shouldIntercept, respond, getState: () => ({ ...state }) };
+    // --- Favoris et étiquettes changés sur le site (même navigateur) ---
+
+    function tagObject(rec, tagId) {
+      const t = (rec.template?.tagOptions ?? []).find((o) => o && o.id === tagId);
+      if (!t) return { id: tagId };
+      return { id: t.id, name: t.name, color: t.color, user_id: t.user_id, created_at: t.created_at };
+    }
+
+    // Applique la liste à `rec` en place ; vrai si au moins une entrée connue a été touchée.
+    function applyTo(rec, list) {
+      if (!rec || !Array.isArray(rec.entries)) return false;
+      const byId = new Map(rec.entries.map((e) => [e.id, e]));
+      let changed = false;
+      for (const m of list) {
+        const e = byId.get(m.entryId);
+        if (!e) continue;
+        changed = true;
+        if (m.kind === 'starred') {
+          e.starred = m.value;
+        } else if (m.kind === 'tagAdd') {
+          e.tags = Array.isArray(e.tags) ? e.tags : [];
+          if (!e.tags.some((t) => t.id === m.tagId)) e.tags.push(tagObject(rec, m.tagId));
+        } else if (m.kind === 'tagRemove') {
+          e.tags = (e.tags ?? []).filter((t) => t.id !== m.tagId);
+        }
+      }
+      return changed;
+    }
+
+    let persistQueue = Promise.resolve();
+
+    function applyMutations(list) {
+      if (!Array.isArray(list) || list.length === 0) return Promise.resolve();
+      for (const m of list) log('mutation', { kind: m.kind, entryId: m.entryId });
+      // Synchrone d'abord : le prochain `respond` voit déjà le changement.
+      if (applyTo(record, list)) {
+        memo = { record: null, groups: null };
+        if (state.mode === 'ready') setState({});
+      }
+      const uid0 = recordUserId;
+      persistQueue = persistQueue.then(async () => {
+        try {
+          const uid = uid0 ?? await cache.getLastUserId();
+          if (uid == null) return;
+          const stored = await cache.get(uid);
+          if (!stored) return;
+          if (applyTo(stored, list)) await cache.put(uid, stored);
+        } catch (err) {
+          log('mutation:cache-error', { error: String((err && err.message) || err) });
+        }
+      });
+      return persistQueue;
+    }
+
+    return { enter, exit, abandon, refresh, shouldIntercept, respond, applyMutations, getState: () => ({ ...state }) };
   }
 
   const api = { createController };

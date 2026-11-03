@@ -26,3 +26,9 @@ test('chaque fichier js existe, main.js en dernier', () => {
   for (const f of js) assert.ok(fs.existsSync(path.join(root, f)), f);
   assert.equal(js[js.length - 1], 'src/main.js');
 });
+
+test('src/mutations.js présent, avant src/controller.js', () => {
+  const js = manifest.content_scripts[0].js;
+  assert.ok(js.includes('src/mutations.js'));
+  assert.ok(js.indexOf('src/mutations.js') < js.indexOf('src/controller.js'));
+});

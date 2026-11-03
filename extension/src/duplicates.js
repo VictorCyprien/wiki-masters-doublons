@@ -11,10 +11,10 @@
     return Number.isNaN(t) ? 0 : t;
   }
 
-  // Non starred de préférence, puis la plus récente.
+  // Favori de préférence, puis la plus récente.
   function pickRepresentative(members) {
-    const plain = members.filter((e) => !e.starred);
-    const pool = plain.length ? plain : members;
+    const starred = members.filter((e) => e.starred);
+    const pool = starred.length ? starred : members;
     return pool.reduce((best, e) => (time(e) > time(best) ? e : best));
   }
 
