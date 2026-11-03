@@ -1033,3 +1033,30 @@ test('erreur de cache : mutation:cache-error journalisé', async () => {
   await c.applyMutations(STAR_OLD);
   assert.ok(logs.some((a) => a[0] === 'mutation:cache-error'));
 });
+
+test('partiel effacé au mismatch : une mutation en file ne le fait pas revenir', async () => {
+  const base = createCache(memoryStore());
+  let holdGP = null;
+  const cache = { ...base, getPartial: async (u) => { const v = await base.getPartial(u); if (holdGP) await holdGP.promise; return v; } };
+  const total = siteApi.SITE.PAGE_SIZE * 3;
+  const two = [makeEntry({ id: 'old', title: 'D', obtainedAt: '2026-10-01T00:00:00+00:00' }),
+    makeEntry({ id: 'new', title: 'D', obtainedAt: '2026-11-01T00:00:00+00:00' })];
+  await base.putPartial('u1', { entries: two, nextPage: 1, pageCount: 3, savedAt: 4242, total, rarityCounts: {} });
+  const gateLoad = deferred();
+  const { c } = setup({
+    cache,
+    fetchFreshness: async () => fresh({ total }),
+    loadAll: async (o) => { await gateLoad.promise; return { entries: o.initialEntries }; },
+  });
+  const p = c.enter();
+  await tick(); await tick();
+  holdGP = deferred();
+  const m = c.applyMutations([{ kind: 'starred', entryId: 'old', value: true }]);
+  await tick(); await tick();
+  gateLoad.resolve();
+  for (let i = 0; i < 20; i += 1) await tick(); // lecture finie, mismatch, effacement demandé
+  const h = holdGP; holdGP = null; h.resolve(); // la mutation en file réécrit le partiel
+  await p;
+  await m;
+  assert.equal(await base.getPartial('u1'), null);
+});

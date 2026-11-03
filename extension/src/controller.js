@@ -137,7 +137,8 @@
     async function dropPartial(mine, uid) {
       if (uid == null) return;
       try {
-        await step(mine, cache.clearPartial(uid));
+        // dans la file : une mutation en cours ne doit pas réécrire un partiel qu'on vient d'effacer
+        await step(mine, queued(() => cache.clearPartial(uid)));
       } catch (err) {
         if (err === STALE) throw err;
       }
