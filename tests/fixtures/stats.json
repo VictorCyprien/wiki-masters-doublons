@@ -1,0 +1,22 @@
+{
+  "total": 13522,
+  "totalUnique": 13498,
+  "rarityCounts": {
+    "C": 9643,
+    "L": 9,
+    "R": 850,
+    "PC": 2635,
+    "SR": 335,
+    "UR": 50
+  },
+  "tagOptions": [
+    {
+      "id": "92158624-7aba-4e00-832d-e5d5571d2c52",
+      "user_id": "user-A",
+      "name": "Etiquette de test",
+      "color": "#e65a0f",
+      "created_at": "2026-11-02T17:41:09.862202+00:00",
+      "cardCount": 1
+    }
+  ]
+}

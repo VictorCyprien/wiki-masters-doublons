@@ -1,0 +1,206 @@
+{
+  "when": "2026-11-02T18:36:48.233Z",
+  "log": [
+    {
+      "t": 5789842,
+      "step": "injected-click"
+    },
+    {
+      "t": 5790143,
+      "step": "ON"
+    },
+    {
+      "t": 5790144,
+      "step": "same",
+      "picked": "Rareté"
+    },
+    {
+      "t": 5837344,
+      "step": "ON"
+    },
+    {
+      "t": 5837345,
+      "step": "resort-1",
+      "picked": "Nom"
+    },
+    {
+      "t": 5837447,
+      "url": "/api/my-collection/stats?sort=name",
+      "intercepted": true
+    },
+    {
+      "t": 5837447,
+      "url": "/api/my-collection?sort=name&page=0&stats=0",
+      "intercepted": true
+    },
+    {
+      "t": 5838948,
+      "step": "resort-2",
+      "picked": "Rareté"
+    },
+    {
+      "t": 5839052,
+      "url": "/api/my-collection/stats?sort=rarity",
+      "intercepted": true
+    },
+    {
+      "t": 5839052,
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "intercepted": true
+    },
+    {
+      "t": 5877143,
+      "step": "OFF"
+    },
+    {
+      "t": 5877143,
+      "step": "resort-1",
+      "picked": "Nom"
+    },
+    {
+      "t": 5877247,
+      "url": "/api/my-collection/stats?sort=name",
+      "intercepted": false
+    },
+    {
+      "t": 5877247,
+      "url": "/api/my-collection?sort=name&page=0&stats=0",
+      "intercepted": false
+    },
+    {
+      "t": 5878747,
+      "step": "resort-2",
+      "picked": "Rareté"
+    },
+    {
+      "t": 5878850,
+      "url": "/api/my-collection/stats?sort=rarity",
+      "intercepted": false
+    },
+    {
+      "t": 5878851,
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "intercepted": false
+    },
+    {
+      "t": 5894679,
+      "step": "ON"
+    },
+    {
+      "t": 5894680,
+      "step": "chip",
+      "chip": "L"
+    },
+    {
+      "t": 5894684,
+      "url": "/api/my-collection/stats?sort=rarity&rarity=L",
+      "intercepted": true
+    },
+    {
+      "t": 5894684,
+      "url": "/api/my-collection?sort=rarity&rarity=L&page=0&stats=0",
+      "intercepted": true
+    },
+    {
+      "t": 5896185,
+      "url": "/api/my-collection/stats?sort=rarity",
+      "intercepted": true
+    },
+    {
+      "t": 5896186,
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "intercepted": true
+    },
+    {
+      "t": 5906179,
+      "step": "OFF"
+    },
+    {
+      "t": 5906179,
+      "step": "chip",
+      "chip": "L"
+    },
+    {
+      "t": 5906181,
+      "url": "/api/my-collection/stats?sort=rarity&rarity=L",
+      "intercepted": false
+    },
+    {
+      "t": 5906182,
+      "url": "/api/my-collection?sort=rarity&rarity=L&page=0&stats=0",
+      "intercepted": false
+    },
+    {
+      "t": 5907684,
+      "url": "/api/my-collection/stats?sort=rarity",
+      "intercepted": false
+    },
+    {
+      "t": 5907684,
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "intercepted": false
+    }
+  ],
+  "listboxes": [
+    {
+      "t": 5787868,
+      "parent": "BODY",
+      "triggerIsLast": true,
+      "options": 4
+    },
+    {
+      "t": 5788869,
+      "injectedStillThere": true
+    },
+    {
+      "t": 5790146,
+      "parent": "BODY",
+      "triggerIsLast": true,
+      "options": 4
+    },
+    {
+      "t": 5791147,
+      "injectedStillThere": false
+    },
+    {
+      "t": 5837346,
+      "parent": "BODY",
+      "triggerIsLast": true,
+      "options": 4
+    },
+    {
+      "t": 5838348,
+      "injectedStillThere": false
+    },
+    {
+      "t": 5838952,
+      "parent": "BODY",
+      "triggerIsLast": true,
+      "options": 4
+    },
+    {
+      "t": 5839953,
+      "injectedStillThere": false
+    },
+    {
+      "t": 5877145,
+      "parent": "BODY",
+      "triggerIsLast": true,
+      "options": 4
+    },
+    {
+      "t": 5878146,
+      "injectedStillThere": false
+    },
+    {
+      "t": 5878750,
+      "parent": "BODY",
+      "triggerIsLast": true,
+      "options": 4
+    },
+    {
+      "t": 5879752,
+      "injectedStillThere": false
+    }
+  ]
+}

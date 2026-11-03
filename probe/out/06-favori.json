@@ -1,0 +1,49 @@
+{
+  "when": "2026-11-03T10:26:47.547Z",
+  "q": "Ruffini",
+  "log": [
+    {
+      "t": "2026-11-03T10:26:34.501Z",
+      "via": "fetch",
+      "method": "PATCH",
+      "path": "/rest/v1/user_cards?id=eq.e6802c13-f7c0-49ee-8a36-cd11aabba3cd",
+      "status": 204,
+      "reqHeaderNames": [
+        "apikey",
+        "authorization",
+        "content-profile",
+        "content-type",
+        "x-client-info"
+      ],
+      "reqBody": "{\"starred\":true}",
+      "resBody": ""
+    },
+    {
+      "t": "2026-11-03T10:26:37.783Z",
+      "via": "fetch",
+      "method": "POST",
+      "path": "/rest/v1/user_card_tags",
+      "status": 201,
+      "reqHeaderNames": [
+        "apikey",
+        "authorization",
+        "content-profile",
+        "content-type",
+        "x-client-info"
+      ],
+      "reqBody": "{\"user_card_id\":\"e6802c13-f7c0-49ee-8a36-cd11aabba3cd\",\"tag_id\":\"92158624-7aba-4e00-832d-e5d5571d2c52\"}",
+      "resBody": ""
+    }
+  ],
+  "copies": [
+    {
+      "id": "e6802c13-f7c0-49ee-8a36-cd11aabba3cd",
+      "card_id": "8dfc1325-cab2-4d47-8657-d0b5240e5614",
+      "title": "Ruffini",
+      "starred": false,
+      "is_shiny": false,
+      "tags": [],
+      "obtained_at": "2026-10-20T06:20:40.164713+00:00"
+    }
+  ]
+}

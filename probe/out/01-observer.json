@@ -1,0 +1,404 @@
+{
+  "when": "2026-11-02T17:34:43.492Z",
+  "page": "/collection",
+  "events": [
+    {
+      "kind": "call",
+      "t": 514,
+      "url": "/api/notifications",
+      "type": "fetch",
+      "ms": 200
+    },
+    {
+      "kind": "call",
+      "t": 833,
+      "url": "/api/notifications",
+      "type": "fetch",
+      "ms": 150
+    },
+    {
+      "kind": "call",
+      "t": 2181,
+      "url": "/api/trades?active=1",
+      "type": "fetch",
+      "ms": 1562
+    },
+    {
+      "kind": "call",
+      "t": 2181,
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "type": "fetch",
+      "ms": 1681
+    },
+    {
+      "kind": "call",
+      "t": 2181,
+      "url": "/api/my-collection/stats?sort=rarity",
+      "type": "fetch",
+      "ms": 2801
+    },
+    {
+      "kind": "call",
+      "t": 115344,
+      "url": "/api/notifications",
+      "type": "fetch",
+      "ms": 834
+    },
+    {
+      "kind": "call",
+      "t": 142906,
+      "url": "/api/my-collection?sort=rarity&page=1&stats=0",
+      "type": "fetch",
+      "ms": 3753
+    },
+    {
+      "kind": "call",
+      "t": 148856,
+      "url": "/api/my-collection?sort=rarity&page=2&stats=0",
+      "type": "fetch",
+      "ms": 3410
+    },
+    {
+      "kind": "call",
+      "t": 369649,
+      "url": "/api/notifications",
+      "type": "fetch",
+      "ms": 277
+    },
+    {
+      "kind": "call",
+      "t": 402244,
+      "url": "/api/marketplace?page=1&limit=50&sort=recent&mine=1",
+      "type": "fetch",
+      "ms": 382
+    },
+    {
+      "kind": "call",
+      "t": 402682,
+      "url": "/api/cards?page=0&sort=rarity",
+      "type": "fetch",
+      "ms": 914
+    },
+    {
+      "kind": "click",
+      "t": 2013083,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "Rareté",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2013882,
+      "tag": "BUTTON",
+      "role": "option",
+      "text": "Nom",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2025996,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "Nom",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2026899,
+      "tag": "BUTTON",
+      "role": "option",
+      "text": "Rareté",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2037402,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "Suivant →",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2043171,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "← Précédent",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2047058,
+      "tag": "INPUT",
+      "role": null,
+      "text": "",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "input",
+      "t": 2049159,
+      "tag": "INPUT",
+      "value": "Léman",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "input",
+      "t": 2060801,
+      "tag": "INPUT",
+      "value": "",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2070475,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "Toutes les étiquettes",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2071510,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "Toutes les étiquettes",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2076035,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "L",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2080431,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "L",
+      "urlAfter": "/collection"
+    },
+    {
+      "kind": "click",
+      "t": 2091259,
+      "tag": "BUTTON",
+      "role": null,
+      "text": "Rareté",
+      "urlAfter": "/collection"
+    }
+  ],
+  "headers": [
+    {
+      "t": 2013884,
+      "via": "fetch",
+      "url": "/api/my-collection/stats?sort=name",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2013884,
+      "via": "fetch",
+      "url": "/api/my-collection?sort=name&page=0&stats=0",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2026901,
+      "via": "fetch",
+      "url": "/api/my-collection/stats?sort=rarity",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2026902,
+      "via": "fetch",
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2037404,
+      "via": "fetch",
+      "url": "/api/my-collection?sort=rarity&page=1&stats=0",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2043173,
+      "via": "fetch",
+      "url": "/api/my-collection/stats?sort=rarity",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2043173,
+      "via": "fetch",
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2048861,
+      "via": "fetch",
+      "url": "/api/my-collection/stats?sort=rarity&q=L%C3%A9man",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2048861,
+      "via": "fetch",
+      "url": "/api/my-collection?sort=rarity&q=L%C3%A9man&page=0&stats=0",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2060508,
+      "via": "fetch",
+      "url": "/api/my-collection/stats?sort=rarity",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2060509,
+      "via": "fetch",
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2076036,
+      "via": "fetch",
+      "url": "/api/my-collection/stats?sort=rarity&rarity=L",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2076037,
+      "via": "fetch",
+      "url": "/api/my-collection?sort=rarity&rarity=L&page=0&stats=0",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2080433,
+      "via": "fetch",
+      "url": "/api/my-collection/stats?sort=rarity",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    },
+    {
+      "t": 2080433,
+      "via": "fetch",
+      "url": "/api/my-collection?sort=rarity&page=0&stats=0",
+      "method": "GET",
+      "headerNames": [],
+      "credentials": null
+    }
+  ],
+  "dom": {
+    "framework": {
+      "nextRoot": false,
+      "nextData": false,
+      "nextFlight": true
+    },
+    "sortTrigger": [
+      {
+        "path": "div.relative.min-w-0.flex-1.md:min-w-[8.5rem] < div.flex.w-full.min-w-0.flex-row < div.flex.flex-col.gap-3.md:flex-row < div.space-y-3.animate-fade-in-up < div.flex-1.p-4.md:p-6.space-y-6 < div",
+        "html": "<div class=\"relative min-w-0 flex-1 md:min-w-[8.5rem] md:max-w-[10rem]\"><button id=\"_r_a_\" type=\"button\" aria-haspopup=\"listbox\" aria-expanded=\"true\" aria-controls=\"_r_9_\" aria-label=\"Trier la collection\" class=\"flex w-full min-h-[42px] min-w-0 items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-light)] py-2 pl-3 pr-2 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,box-shadow] hover:border-[var(--color-foreground)]/12 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/35\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Rareté</span></span><svg xmlns=\"http://www.w3.org/"
+      },
+      {
+        "path": "button#_r_a_.flex.w-full.min-h-[42px].min-w-0 < div.relative.min-w-0.flex-1.md:min-w-[8.5rem] < div.flex.w-full.min-w-0.flex-row < div.flex.flex-col.gap-3.md:flex-row < div.space-y-3.animate-fade-in-up < div.flex-1.p-4.md:p-6.space-y-6",
+        "html": "<button id=\"_r_a_\" type=\"button\" aria-haspopup=\"listbox\" aria-expanded=\"true\" aria-controls=\"_r_9_\" aria-label=\"Trier la collection\" class=\"flex w-full min-h-[42px] min-w-0 items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-light)] py-2 pl-3 pr-2 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,box-shadow] hover:border-[var(--color-foreground)]/12 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/35\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Rareté</span></span><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-w"
+      },
+      {
+        "path": "span.flex.min-w-0.flex-1.items-center < button#_r_a_.flex.w-full.min-h-[42px].min-w-0 < div.relative.min-w-0.flex-1.md:min-w-[8.5rem] < div.flex.w-full.min-w-0.flex-row < div.flex.flex-col.gap-3.md:flex-row < div.space-y-3.animate-fade-in-up",
+        "html": "<span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Rareté</span></span>"
+      },
+      {
+        "path": "span.block.min-w-0.truncate.text-left < span.flex.min-w-0.flex-1.items-center < button#_r_a_.flex.w-full.min-h-[42px].min-w-0 < div.relative.min-w-0.flex-1.md:min-w-[8.5rem] < div.flex.w-full.min-w-0.flex-row < div.flex.flex-col.gap-3.md:flex-row",
+        "html": "<span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Rareté</span>"
+      },
+      {
+        "path": "li[role=none] < ul#_r_9_[role=listbox].max-h-52.overflow-y-auto.rounded-xl.border",
+        "html": "<li role=\"none\"><button type=\"button\" role=\"option\" aria-selected=\"true\" class=\"flex w-full cursor-pointer items-center justify-start px-3 py-2 text-left text-sm transition-colors bg-[var(--color-accent)]/12\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Rareté</span></span></button></li>"
+      }
+    ],
+    "listbox": "<ul id=\"_r_9_\" role=\"listbox\" aria-labelledby=\"_r_a_\" class=\"max-h-52 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] py-1 shadow-xl ring-1 ring-black/25\" style=\"position: fixed; top: 132px; left: 1333px; width: 136px; z-index: 45;\"><li role=\"none\"><button type=\"button\" role=\"option\" aria-selected=\"true\" class=\"flex w-full cursor-pointer items-center justify-start px-3 py-2 text-left text-sm transition-colors bg-[var(--color-accent)]/12\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Rareté</span></span></button></li><li role=\"none\"><button type=\"button\" role=\"option\" aria-selected=\"false\" class=\"flex w-full cursor-pointer items-center justify-start px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--color-surface-light)]\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Nom</span></span></button></li><li role=\"none\"><button type=\"button\" role=\"option\" aria-selected=\"false\" class=\"flex w-full cursor-pointer items-center justify-start px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--color-surface-light)]\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Favoris</span></span></button></li><li role=\"none\"><button type=\"button\" role=\"option\" aria-selected=\"false\" class=\"flex w-full cursor-pointer items-center justify-start px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--color-surface-light)]\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Date d'ajout</span></span></button></li></ul>",
+    "tagsTrigger": [
+      {
+        "path": "div.relative.min-w-0.flex-1.md:min-w-[12rem] < div.flex.w-full.min-w-0.flex-row < div.flex.flex-col.gap-3.md:flex-row < div.space-y-3.animate-fade-in-up < div.flex-1.p-4.md:p-6.space-y-6 < div",
+        "html": "<div class=\"relative min-w-0 flex-1 md:min-w-[12rem] md:max-w-[16rem]\"><button id=\"_r_8_\" type=\"button\" aria-haspopup=\"listbox\" aria-expanded=\"false\" aria-controls=\"_r_7_\" aria-label=\"Filtrer par étiquette\" class=\"flex w-full min-h-[42px] min-w-0 items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-light)] py-2 pl-3 pr-2 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,box-shadow] hover:border-[var(--color-foreground)]/12 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/35\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Toutes les étiquettes</span></span><svg xmlns=\"h"
+      },
+      {
+        "path": "button#_r_8_.flex.w-full.min-h-[42px].min-w-0 < div.relative.min-w-0.flex-1.md:min-w-[12rem] < div.flex.w-full.min-w-0.flex-row < div.flex.flex-col.gap-3.md:flex-row < div.space-y-3.animate-fade-in-up < div.flex-1.p-4.md:p-6.space-y-6",
+        "html": "<button id=\"_r_8_\" type=\"button\" aria-haspopup=\"listbox\" aria-expanded=\"false\" aria-controls=\"_r_7_\" aria-label=\"Filtrer par étiquette\" class=\"flex w-full min-h-[42px] min-w-0 items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-light)] py-2 pl-3 pr-2 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,box-shadow] hover:border-[var(--color-foreground)]/12 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/35\"><span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Toutes les étiquettes</span></span><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"curr"
+      },
+      {
+        "path": "span.flex.min-w-0.flex-1.items-center < button#_r_8_.flex.w-full.min-h-[42px].min-w-0 < div.relative.min-w-0.flex-1.md:min-w-[12rem] < div.flex.w-full.min-w-0.flex-row < div.flex.flex-col.gap-3.md:flex-row < div.space-y-3.animate-fade-in-up",
+        "html": "<span class=\"flex min-w-0 flex-1 items-center justify-start\"><span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Toutes les étiquettes</span></span>"
+      },
+      {
+        "path": "span.block.min-w-0.truncate.text-left < span.flex.min-w-0.flex-1.items-center < button#_r_8_.flex.w-full.min-h-[42px].min-w-0 < div.relative.min-w-0.flex-1.md:min-w-[12rem] < div.flex.w-full.min-w-0.flex-row < div.flex.flex-col.gap-3.md:flex-row",
+        "html": "<span class=\"block min-w-0 truncate text-left font-medium leading-none text-[var(--color-foreground)]\">Toutes les étiquettes</span>"
+      }
+    ],
+    "search": [
+      {
+        "path": "input.w-full.min-w-0.flex-1.rounded-lg < div.flex.flex-col.gap-3.md:flex-row < div.space-y-3.animate-fade-in-up < div.flex-1.p-4.md:p-6.space-y-6 < div < div",
+        "html": "<input placeholder=\"Rechercher par titre ou catégorie...\" class=\"w-full min-w-0 flex-1 rounded-lg bg-[var(--color-surface-light)] border border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-foreground)] placeholder:text-[var(--color-foreground)]/30 focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/50\" type=\"text\" value=\"\">"
+      }
+    ],
+    "rarityChip": [
+      {
+        "path": "button.px-3.py-1.rounded-full.text-xs < div.flex.flex-wrap.gap-2 < div.space-y-3.animate-fade-in-up < div.flex-1.p-4.md:p-6.space-y-6 < div < div",
+        "html": "<button class=\"px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer opacity-50 hover:opacity-80\" style=\"background-color: var(--color-rarity-ur)30; color: var(--color-rarity-ur);\">UR</button>"
+      },
+      {
+        "path": "div.absolute.top-2.left-2.px-2 < div.w-[clamp(8.4rem,43vw,10rem)].h-[clamp(11.8rem,60vw,14rem)].glow-ur.relative < div.relative.isolate.group < div.flex.flex-wrap.justify-center.gap-3 < div.relative < div.scroll-mt-4.space-y-3",
+        "html": "<div class=\"absolute top-2 left-2 px-2 py-0.5 rounded-md text-xs font-bold z-30\" style=\"background-color: var(--color-rarity-ur); color: rgb(13, 17, 23); box-shadow: 0 0 10px var(--color-rarity-ur)99;\">UR</div>"
+      },
+      {
+        "path": "div.absolute.top-2.left-2.px-2 < div.w-[clamp(8.4rem,43vw,10rem)].h-[clamp(11.8rem,60vw,14rem)].glow-ur.relative < div.relative.isolate.group < div.flex.flex-wrap.justify-center.gap-3 < div.relative < div.scroll-mt-4.space-y-3",
+        "html": "<div class=\"absolute top-2 left-2 px-2 py-0.5 rounded-md text-xs font-bold z-30\" style=\"background-color: var(--color-rarity-ur); color: rgb(13, 17, 23); box-shadow: 0 0 10px var(--color-rarity-ur)99;\">UR</div>"
+      },
+      {
+        "path": "div.absolute.top-2.left-2.px-2 < div.w-[clamp(8.4rem,43vw,10rem)].h-[clamp(11.8rem,60vw,14rem)].glow-ur.relative < div.relative.isolate.group < div.flex.flex-wrap.justify-center.gap-3 < div.relative < div.scroll-mt-4.space-y-3",
+        "html": "<div class=\"absolute top-2 left-2 px-2 py-0.5 rounded-md text-xs font-bold z-30\" style=\"background-color: var(--color-rarity-ur); color: rgb(13, 17, 23); box-shadow: 0 0 10px var(--color-rarity-ur)99;\">UR</div>"
+      },
+      {
+        "path": "div.absolute.top-2.left-2.px-2 < div.w-[clamp(8.4rem,43vw,10rem)].h-[clamp(11.8rem,60vw,14rem)].glow-ur.relative < div.relative.isolate.group < div.flex.flex-wrap.justify-center.gap-3 < div.relative < div.scroll-mt-4.space-y-3",
+        "html": "<div class=\"absolute top-2 left-2 px-2 py-0.5 rounded-md text-xs font-bold z-30\" style=\"background-color: var(--color-rarity-ur); color: rgb(13, 17, 23); box-shadow: 0 0 10px var(--color-rarity-ur)99;\">UR</div>"
+      }
+    ],
+    "pager": {
+      "path": "span.text-sm.text-[var(--color-foreground)]/40 < div.flex.items-center.justify-center.gap-2 < div.scroll-mt-4.space-y-3 < div.flex-1.p-4.md:p-6.space-y-6 < div < div",
+      "html": "<div class=\"flex items-center justify-center gap-2 py-3\"><button type=\"button\" disabled=\"\" class=\"px-4 py-2 rounded-lg bg-[var(--color-surface-light)] text-sm disabled:opacity-30 hover:bg-[var(--color-accent)]/10 transition-all cursor-pointer disabled:cursor-not-allowed\">← Précédent</button><span class=\"text-sm text-[var(--color-foreground)]/40\">Page 1 / 271</span><button type=\"button\" class=\"px-4 py-2 rounded-lg bg-[var(--color-surface-light)] text-sm disabled:opacity-30 hover:bg-[var(--color-accent)]/10 transition-all cursor-pointer disabled:cursor-not-allowed\">Suivant →</button></div>"
+    },
+    "grid": {
+      "path": "div.flex.flex-wrap.justify-center.gap-3 < div.relative < div.scroll-mt-4.space-y-3 < div.flex-1.p-4.md:p-6.space-y-6 < div < div",
+      "children": 50
+    },
+    "card": {
+      "path": "div.relative.isolate.group < div.flex.flex-wrap.justify-center.gap-3 < div.relative < div.scroll-mt-4.space-y-3 < div.flex-1.p-4.md:p-6.space-y-6 < div",
+      "text": "LPornhubsite pornographique9 0076 040",
+      "html": "<div class=\"relative isolate group\"><div class=\" w-[clamp(8.4rem,43vw,10rem)] h-[clamp(11.8rem,60vw,14rem)] glow-l relative rounded-2xl overflow-hidden cursor-pointer hover:z-10 transition-all duration-300 hover:scale-105 \"><img alt=\"\" decoding=\"async\" data-nimg=\"fill\" class=\"object-cover scale-[1.8]\" src=\"/rarity/legendaire.webp?dpl=dpl_DE3Jw34woQYLxrPU9PnwPK7o2xHf\" style=\"position: absolute; height: 100%; width: 100%; inset: 0px; color: transparent;\"><div class=\"absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-transparent pointer-events-none z-10\"></div><div class=\"absolute top-0 left-0 right-0 h-[45%] z-20 bg-black/20\"><div class=\"relative h-full w-full min-h-0\"><img alt=\"Pornhub\" crossorigin=\"anonymous\" loading=\"lazy\" decoding=\"async\" data-nimg=\"fill\" class=\"object-contain object-center\" src=\"https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f1/Pornhub-logo.svg/330px-Pornhub-logo.svg.png?utm_source=fr.wikipedia.org&amp;utm_campaign=api&amp;utm_content=thumbnail\" style=\"position: absolute; height: 100%; width: 100%; inset: 0px; color: transparent; transform: scale(0.9);\"><div class=\"absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-black/50 to-transparent\"></div></div></div><div class=\"absolute top-2 left-2 px-2 py-0.5 rounded-md text-xs font-bold z-30\" style=\"background-color: var(--color-rarity-l); color: rgb(13, 17, 23); box-shadow: 0 0 10px var(--color-rarity-l)99;\">L</div><div class=\"absolute top-2 right-2 z-30 flex flex-col items-end gap-1\"><button type=\"button\" class=\"p-0.5 rounded-md bg-transparent transition-colors duration-150 cursor-pointer outline-none focus-visible:ring-1 focus-visible:ring-amber-400/45 focus-visible:ring-offset-0 active:bg-black/40 active:backdrop-blur-sm text-amber-200\" aria-label=\"Retirer des favoris (déverrouille la carte)\" title=\"Retirer des favoris (déverrouille la carte)\"><svg viewBox=\"0 0 24 24\" class=\"size-[1.375rem] drop-shadow-[0_0.5px_2px_rgba(0,0,0,0.55)]\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z\"></path></svg></button></div><div class=\"absolute top-[45%] left-0 right-0 bottom-0 flex min-h-0 flex-col p-3 z-20 \"><h3 class=\"text-xs shrink-0 font-bold leading-tight line-clamp-2 text-black drop-shadow-none\" style=\"font-family: var(--font-heading);\">Pornhub</h3><p class=\"min-h-0 leading-snug text-neutral-900/90 overflow-hidden line-clamp-3 text-[9px] shrink-0\">site pornographique</p><div class=\"mt-auto flex min-h-0 w-full flex-col items-start gap-0.5 pt-1\"><div class=\"flex w-full shrink-0 items-center justify-between border-t border-black/20 pt-1 py-1 justify-between\"><div class=\"text-[10px] flex items-center justify-center gap-1 \"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-swords size-[1em] shrink-0 text-red-800\" aria-h"
+    }
+  }
+}

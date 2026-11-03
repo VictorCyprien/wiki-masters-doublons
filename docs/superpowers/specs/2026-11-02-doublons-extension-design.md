@@ -7,16 +7,27 @@ Statut : en relecture
 
 Sur wiki-masters.com, la page collection ne permet pas de trier ni de filtrer les cartes possédées en plusieurs exemplaires. Victor veut **voir ses doublons**, triés du plus grand nombre d'exemplaires au plus petit, directement dans la page collection du site, comme s'il s'agissait d'une fonction native.
 
-L'API du site renvoie déjà le nombre d'exemplaires (`count`) pour chaque carte. Le projet est une extension Chrome, publiée sur le Chrome Web Store, qui exploite ce champ.
+L'API du site renvoie déjà le nombre d'exemplaires (`count`) pour chaque carte. Le projet est une extension Chrome, publiée sur le Chrome Web Store, qui exploite ce champ. *(Amendé : `count` vaut toujours 1 ; les exemplaires se comptent en regroupant les entrées, voir « Amendements ».)*
 
 Le script sera partagé avec d'autres joueurs, dont les collections peuvent être bien plus petites ou bien plus grandes que celle de Victor.
+
+## Amendements après la sonde (2026-11-02)
+
+La sonde a fait tomber H3 : `count` vaut toujours 1 et un doublon est une **carte présente en plusieurs entrées**. Victor a tranché la nouvelle règle, l'affichage d'une carte par groupe et le rafraîchissement incrémental ; les sections ci-dessous sont mises à jour. Résultats détaillés : `docs/carnet-api.md`. La recherche du site se reproduit exactement (H8 tient) : le repli « recherche approximative » ne sert plus.
+
+**Favoris et étiquettes (Victor, 2026-11-03, après la preuve).** Le site enregistre l'étoile et les étiquettes **par exemplaire**, directement auprès de sa base (sonde 6 : `PATCH …/rest/v1/user_cards?id=eq.<exemplaire>` `{"starred": …}` ; `POST …/rest/v1/user_card_tags` `{user_card_id, tag_id}` ; `DELETE …/rest/v1/user_card_tags?user_card_id=eq.…&tag_id=eq.…`). Ces changements ne bougent ni `total` ni `rarityCounts` : la vérification de fraîcheur ne les voit pas. Règles :
+- L'exemplaire affiché pour un groupe est **l'exemplaire favori d'abord**, puis le plus récent : l'étoile est cochée dès qu'un exemplaire est en favori.
+- Les changements faits dans ce navigateur (en mode Doublons ou non) sont suivis : chaque requête de favori ou d'étiquette **réussie** met à jour les cartes gardées. Seuls l'adresse, la méthode, le corps et le statut sont lus ; jamais les en-têtes (clés, jetons).
+- Les changements faits ailleurs (autre appareil, autre navigateur) apparaissent à la prochaine lecture complète, sans appel en plus : limite écrite dans le README.
+
+**Présentation et soutien (Victor, 2026-11-03).** Avant la publication : une vraie icône (deux cartes décalées et une pastille « ×2 », fond sombre, cartes vert menthe ; aucun logo ni marque du site), et une petite fenêtre qui s'ouvre au clic sur l'icône de l'extension dans la barre du navigateur, **jamais sur la page du site**. La fenêtre explique en quelques lignes ce que fait l'extension et comment s'en servir, rassure sur la vie privée, et propose deux liens de soutien facultatifs (Buy Me a Coffee et tip.md) qui s'ouvrent dans un nouvel onglet. Aucune permission en plus, aucun suivi. Les textes visibles (nom, description, infobulle, fenêtre) sont écrits simplement, en tutoyant, comme on parle à un autre joueur.
 
 ## Objectifs
 
 - Ajouter « Doublons » comme cinquième choix dans la liste déroulante de tri existante (Rareté, Nom, Favoris, Date d'ajout, **Doublons**).
-- En mode Doublons, afficher uniquement les cartes avec `count ≥ 2`, triées par `count` décroissant.
-- Les cartes affichées ont **exactement le rendu des cartes du site**, plus un badge `×N` (N = `count`). Un clic sur une carte fait **la même chose que sur le site**.
-- Une ligne de résumé au-dessus de la grille : « X cartes en double · Y exemplaires en trop » (Y = somme de `count − 1`). À droite : date du dernier chargement et bouton « ↻ rafraîchir ».
+- En mode Doublons, afficher uniquement les cartes possédées en au moins 2 exemplaires, triées par nombre d'exemplaires décroissant. **Règle (Victor, 2026-11-02, après la sonde 3)** : les entrées se regroupent par (`card_id`, `is_shiny`) ; le nombre d'exemplaires N d'un groupe est la somme des `count` de ses entrées ; un doublon est un groupe avec N ≥ 2. (Sur le compte de Victor, chaque exemplaire est une entrée séparée avec `count: 1`.)
+- Les cartes affichées ont **exactement le rendu des cartes du site**, plus un badge `×N`. **Une seule carte par groupe** (décision de Victor) : une entrée représentante du groupe ; le clic ouvre la fenêtre de cet exemplaire-là. Un clic sur une carte fait **la même chose que sur le site**.
+- Une ligne de résumé au-dessus de la grille : « X cartes en double · Y exemplaires en trop » (X = nombre de groupes en double, Y = somme de N − 1). À droite : date du dernier chargement et bouton « ↻ rafraîchir ».
 - En mode Doublons, la recherche (« Rechercher par titre ou catégorie… »), le filtre d'étiquettes (« Toutes les étiquettes ») et les filtres de rareté (L, UR, SR, R, PC, C) continuent de fonctionner, combinés au filtre doublon.
 - La pagination du site reflète la liste de doublons filtrée (nombre de pages juste).
 - Fonctionner pour des collections de quelques dizaines à plus de 10 000 entrées.
@@ -26,7 +37,7 @@ Le script sera partagé avec d'autres joueurs, dont les collections peuvent êtr
 - Échanger, recycler, vendre ou fusionner des cartes.
 - Toute écriture vers l'API (le script ne fait que des `GET` sur `my-collection`).
 - Mobile, Firefox, Safari. Seuls les navigateurs Chromium (Chrome, Arc, Brave) sont visés pour cette version.
-- Fusionner shiny et normale : **une carte shiny et la même carte normale sont deux cartes distinctes**. Un doublon, c'est `count ≥ 2` sur une même entrée.
+- Fusionner shiny et normale : **une carte shiny et la même carte normale sont deux cartes distinctes**. Un doublon, c'est un groupe (`card_id`, `is_shiny`) d'au moins 2 exemplaires.
 - Un serveur, une page séparée.
 - Un userscript (Tampermonkey, Violentmonkey) : écarté le 2026-11-02 par Victor, car il oblige chaque joueur à installer un gestionnaire de scripts et à activer une option de Chrome. Une extension du Chrome Web Store s'installe en un clic.
 
@@ -62,7 +73,7 @@ Un premier chargement lent (une minute ou plus pour une grosse collection) est *
     "count": 1,
     "card_id": "efef6932-…",
     "starred": false,
-    "user_id": "user-A-…",
+    "user_id": "user-A",
     "is_shiny": false,
     "obtained_at": "2026-10-27T17:56:32.52341+00:00"
   }
@@ -82,7 +93,7 @@ L'API n'est pas documentée. Conformément à la conviction de Victor « Sonde d
 | H1 | L'API s'authentifie par les cookies de session du site ; un appel same-origin depuis la page réussit sans jeton à fabriquer (ou avec un en-tête que le script peut reprendre des appels du site). | **Arrêt**, retour vers Victor. |
 | H2 | La pagination est stable : pages indexées à partir de 0, taille fixe, fin détectable (total ou nombre de pages dans l'enveloppe, ou page vide). | Adapter la boucle de lecture ; si la fin n'est pas détectable de façon fiable, retour vers Victor. |
 | H3 | Il y a une entrée par couple (`card_id`, `is_shiny`), et `count` est le nombre d'exemplaires de cette version. | Revoir la règle de doublon avec Victor. |
-| H4 | Expliquer les 270 pages : l'API renvoie-t-elle des cartes non possédées (`count` = 0) ? | Rien à changer côté design (le filtre `count ≥ 2` les écarte), mais le fait va au carnet. |
+| H4 | Expliquer les 270 pages : l'API renvoie-t-elle des cartes non possédées (`count` = 0) ? | Rien à changer côté design, mais le fait va au carnet. *(Expliquée : pas de carte non possédée.)* |
 | H5 | L'API accepte-t-elle un tri ou un filtre côté serveur sur `count` (ex. `sort=count`) ? | Si oui : utiliser le serveur plutôt que tout lire, le script devient bien plus léger. Si non : lecture complète + cache, comme décrit ici. |
 | H6 | L'API accepte-t-elle un paramètre de taille de page (ex. `limit`, `per_page`, `size`) pour réduire le nombre d'appels ? | Si non : 50 par page. |
 | H7 | Le script de l'extension, exécuté dans le contexte de la page (content script avec `world: "MAIN"`, `run_at: "document_start"`), peut intercepter l'appel du site à `my-collection` (`fetch` ou `XMLHttpRequest`) et lui substituer une réponse ; le site affiche alors ces cartes lui-même (rendu, clic, pagination). | **Repli décidé** : le script dessine sa propre grille en clonant le HTML d'une carte rendue par le site et en reproduisant son comportement au clic. |
@@ -92,7 +103,7 @@ L'API n'est pas documentée. Conformément à la conviction de Victor « Sonde d
 | H11 | La liste déroulante de tri accepte qu'on y injecte un choix ; on peut détecter sa sélection, afficher « Doublons » comme libellé sélectionné, et revenir proprement aux autres tris. | Repli : un bouton « Doublons » juste à droite de la liste déroulante. |
 | H12 | Il existe un signal de fraîcheur peu coûteux (un seul appel) qui change quand un `count` change, pas seulement quand une nouvelle carte entre : par exemple un total d'exemplaires dans `stats=1`, ou le `obtained_at` le plus récent sous le tri « Date d'ajout » s'il est mis à jour à chaque nouvel exemplaire. | Repli : comparer le seul total d'entrées. La limite (un exemplaire de plus d'une carte déjà possédée passe inaperçu) est alors écrite dans le README et rappelée par la date « chargé il y a … ». |
 | H13 | Les contrôles de la page (liste déroulante de tri, recherche, étiquettes, puces de rareté) se repèrent par la structure de la page, sans dépendre de leurs libellés français. | Repérer par libellés français, et le noter comme limite dans le README. |
-| H14 | Verdict peut lancer son navigateur avec l'extension non empaquetée chargée. | Pendant le développement, injecter le code du script dans la page via Verdict (`verdict js`) avant de choisir « Doublons » : l'interception doit seulement être en place avant le prochain appel du site à `my-collection`. Le comportement au tout premier chargement de la page est alors vérifié par Victor dans son Chrome. |
+| H14 | *Sans objet depuis le 2026-11-02 : les preuves se font dans le Chrome de Victor, extension chargée non empaquetée.* Verdict peut lancer son navigateur avec l'extension non empaquetée chargée. | Pendant le développement, injecter le code du script dans la page via Verdict (`verdict js`) avant de choisir « Doublons » : l'interception doit seulement être en place avant le prochain appel du site à `my-collection`. Le comportement au tout premier chargement de la page est alors vérifié par Victor dans son Chrome. |
 
 La sonde journalise des métadonnées (statuts HTTP, formes des réponses, noms de paramètres, en-têtes utiles), jamais de cookie ni de jeton. Ses résultats vont dans un carnet versionné du dépôt (`docs/carnet-api.md`), faits datés d'un côté, hypothèses de l'autre.
 
@@ -109,7 +120,7 @@ Si aucun cache n'existe pour le compte, le script lit toutes les pages de `my-co
 ### Vue chargée
 
 - Ligne de résumé en haut : « X cartes en double · Y exemplaires en trop », puis « chargé il y a … · ↻ rafraîchir ».
-- Grille de cartes au rendu natif du site, filtrée sur `count ≥ 2`, triée par `count` décroissant, avec badge `×N`.
+- Grille de cartes au rendu natif du site : une carte par groupe en double, triée par N décroissant, avec badge `×N`.
 - Les totaux du résumé suivent les filtres actifs (recherche, étiquettes, rareté).
 
 Maquette de référence : `.superpowers/brainstorm/…/content/vue-a-v2.html` (non versionnée). L'apparence finale suit le style du site.
@@ -118,13 +129,14 @@ Maquette de référence : `.superpowers/brainstorm/…/content/vue-a-v2.html` (n
 
 Recherche, étiquettes et rareté s'appliquent sur le cache, avec les mêmes règles que le site (relevées en H8). La pagination affichée correspond à la liste filtrée.
 
-Si la sonde ne parvient pas à reproduire exactement la règle de recherche du site (décision de Victor) : la recherche en mode Doublons devient une recherche locale approchée (sous-chaîne sur titre et catégorie, sans tenir compte de la casse ni des accents), et la vue l'indique (« recherche approximative »). Pas d'appel serveur supplémentaire pour la recherche.
+*(Caduc depuis la sonde : la règle exacte est reproduite.)* Si la sonde ne parvient pas à reproduire exactement la règle de recherche du site (décision de Victor) : la recherche en mode Doublons devient une recherche locale approchée (sous-chaîne sur titre et catégorie, sans tenir compte de la casse ni des accents), et la vue l'indique (« recherche approximative »). Pas d'appel serveur supplémentaire pour la recherche.
 
 ### Cache
 
 - Stocké localement dans le navigateur, dans un stockage sans la limite de 5 Mo de `localStorage` (13 500 entrées peuvent la dépasser) : IndexedDB, ou `chrome.storage.local` avec la permission `unlimitedStorage`, au choix du constructeur.
 - Rattaché au compte (`user_id`) : deux comptes sur le même navigateur ne se mélangent pas.
-- N'expire jamais seul. Le bouton « ↻ rafraîchir » le reconstruit.
+- N'expire jamais seul. Le bouton « ↻ rafraîchir » le met à jour.
+- **Rafraîchissement incrémental** (décision de Victor, 2026-11-02) : une lecture complète prend environ 26 minutes sur la collection de Victor (13 522 entrées, 4,4 s par page en moyenne). « ↻ rafraîchir » lit donc les pages sous le tri « Date d'ajout » (les plus récentes d'abord) jusqu'à retomber sur une entrée déjà en cache, et ajoute les nouvelles. Puis il compare le nombre d'entrées du cache au `total` du serveur : s'ils diffèrent (une carte est partie : échange, vente…), il relance une lecture complète. La lecture complète n'a donc lieu qu'à la première ouverture et quand une carte a quitté la collection.
 - Garde la date du dernier chargement complet.
 
 ### Fraîcheur (décision de Victor : vérification légère)
@@ -133,7 +145,8 @@ Si la sonde ne parvient pas à reproduire exactement la règle de recherche du s
 
 ### Erreurs
 
-- Sur 429 ou 5xx : le script respecte `Retry-After` s'il est présent, sinon il s'arrête. Il ne martèle jamais.
+- *(Révisé le 2026-11-02 par Victor, après une erreur serveur à la page 97 pendant la preuve.)* Sur 429, 5xx, coupure réseau ou délai dépassé : la même page est retentée au plus **3 fois**, après `Retry-After` s'il est présent et ≤ 60 s, sinon après 5 s, puis 15 s, puis 45 s ; `Retry-After` > 60 s ou un 4e échec arrêtent la lecture. Toujours une seule requête à la fois. Il ne martèle jamais.
+- **Reprise** (Victor, 2026-11-02) : les pages déjà lues d'une lecture complète sont gardées (aussi après rechargement de la page, 24 h au plus). Après un arrêt, la vue dit « Lecture interrompue à la page N / M » et « ↻ Reprendre » repart de la page en échec ; rouvrir le mode Doublons reprend aussi. La vérification finale du total reste : rien de partiel n'est affiché.
 - Une lecture incomplète (page en échec, total lu ≠ total annoncé par l'API) **n'est jamais affichée comme un résultat complet**. Le script le dit clairement et garde l'ancien cache s'il en existe un.
 - Toute exception du script est attrapée. Le site doit continuer à marcher comme sans le script.
 
@@ -155,7 +168,7 @@ Chaque appel du site passe tel quel, sans modification ni retard. Le script n'aj
 
 ## Accès au site et tests
 
-- **Accès** (décision de Victor) : la sonde et les vérifications de bout en bout passent par Verdict. Victor ouvre la session Verdict et se connecte une fois ; ensuite Claude pilote lui-même le navigateur. Claude ne voit ni ne stocke le mot de passe ; le carnet et les journaux ne contiennent ni cookie ni jeton.
+- **Accès** (décision de Victor, révisée le 2026-11-02) : Cloudflare Turnstile refuse la connexion dans le navigateur automatisé de Verdict, et on ne cherche pas à le contourner. La sonde et les preuves de bout en bout se font donc **dans le Chrome de Victor**, où il est connecté normalement : Claude écrit de courts scripts que Victor colle dans la console DevTools ; chacun ne collecte que des métadonnées et rend son résultat par `copy(...)`, que Victor dépose dans `probe/out/` avec `! pbpaste > probe/out/<étape>.json`. Ce qui se voit à l'écran, Victor le décrit ou le capture. Ni cookie ni jeton ne transitent.
 - **Un seul compte** (celui de Victor, environ 270 pages). Conséquences :
   - H9 (limite de débit) est **observée sans être provoquée** : aucune rafale volontaire pour déclencher un 429. L'espacement de 300 à 500 ms reste une valeur prudente, non validée par un test de charge.
   - La séparation du cache par `user_id` et le cas des petites collections se testent hors navigateur, sur des données d'exemple (fonctions pures), pas sur un second compte réel.
@@ -165,7 +178,7 @@ Chaque appel du site passe tel quel, sans modification ni retard. Le script n'aj
 
 ## Lots proposés
 
-1. **Sonde** : vérifier H1 à H14 via Verdict, remplir le carnet. Arrêt si H1 tombe ; si H2 ou H3 tombe, retour vers Victor.
+1. **Sonde** : vérifier H1 à H13 dans le Chrome de Victor (console DevTools), remplir le carnet. Arrêt si H1 tombe ; si H2 ou H3 tombe, retour vers Victor.
 2. **Script** : le mode Doublons complet, vérifié en vrai sur le site avec le compte de Victor.
 3. **Publication** : dépôt GitHub public, README, zip de l'extension, textes de la fiche du store, page de confidentialité. Soumission au Chrome Web Store par Victor.
 
