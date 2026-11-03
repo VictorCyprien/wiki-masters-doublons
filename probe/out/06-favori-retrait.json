@@ -1,0 +1,97 @@
+{
+  "when": "2026-11-03T10:30:54.536Z",
+  "q": "ruffini",
+  "log": [
+    {
+      "t": "2026-11-03T10:26:34.501Z",
+      "via": "fetch",
+      "method": "PATCH",
+      "path": "/rest/v1/user_cards?id=eq.e6802c13-f7c0-49ee-8a36-cd11aabba3cd",
+      "status": 204,
+      "reqHeaderNames": [
+        "apikey",
+        "authorization",
+        "content-profile",
+        "content-type",
+        "x-client-info"
+      ],
+      "reqBody": "{\"starred\":true}",
+      "resBody": ""
+    },
+    {
+      "t": "2026-11-03T10:26:37.783Z",
+      "via": "fetch",
+      "method": "POST",
+      "path": "/rest/v1/user_card_tags",
+      "status": 201,
+      "reqHeaderNames": [
+        "apikey",
+        "authorization",
+        "content-profile",
+        "content-type",
+        "x-client-info"
+      ],
+      "reqBody": "{\"user_card_id\":\"e6802c13-f7c0-49ee-8a36-cd11aabba3cd\",\"tag_id\":\"92158624-7aba-4e00-832d-e5d5571d2c52\"}",
+      "resBody": ""
+    },
+    {
+      "t": "2026-11-03T10:30:34.384Z",
+      "via": "fetch",
+      "method": "POST",
+      "path": "/rest/v1/rpc/get_my_profile",
+      "status": 200,
+      "reqHeaderNames": [
+        "apikey",
+        "authorization",
+        "content-profile",
+        "content-type",
+        "x-client-info"
+      ],
+      "reqBody": "{}",
+      "resBody": "(profil : non gardé)"
+    },
+    {
+      "t": "2026-11-03T10:30:43.427Z",
+      "via": "fetch",
+      "method": "PATCH",
+      "path": "/rest/v1/user_cards?id=eq.e6802c13-f7c0-49ee-8a36-cd11aabba3cd",
+      "status": 204,
+      "reqHeaderNames": [
+        "apikey",
+        "authorization",
+        "content-profile",
+        "content-type",
+        "x-client-info"
+      ],
+      "reqBody": "{\"starred\":false}",
+      "resBody": ""
+    },
+    {
+      "t": "2026-11-03T10:30:45.348Z",
+      "via": "fetch",
+      "method": "DELETE",
+      "path": "/rest/v1/user_card_tags?user_card_id=eq.e6802c13-f7c0-49ee-8a36-cd11aabba3cd&tag_id=eq.92158624-7aba-4e00-832d-e5d5571d2c52",
+      "status": 204,
+      "reqHeaderNames": [
+        "apikey",
+        "authorization",
+        "content-profile",
+        "content-type",
+        "x-client-info"
+      ],
+      "reqBody": null,
+      "resBody": ""
+    }
+  ],
+  "copies": [
+    {
+      "id": "e6802c13-f7c0-49ee-8a36-cd11aabba3cd",
+      "card_id": "8dfc1325-cab2-4d47-8657-d0b5240e5614",
+      "title": "Ruffini",
+      "starred": false,
+      "is_shiny": false,
+      "tags": [],
+      "obtained_at": "2026-10-20T06:20:40.164713+00:00"
+    }
+  ]
+}

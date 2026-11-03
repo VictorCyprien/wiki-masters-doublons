@@ -471,6 +471,45 @@ git commit -m "docs: carnet de sonde de l'API my-collection"
 
 ---
 
+### Task 11: Favoris et étiquettes suivis (décision de Victor, 2026-11-03)
+
+> Ajoutée après la preuve : une étoile cochée en mode Doublons réapparaissait décochée au retour, car les cartes gardées ne voyaient pas le changement et l'exemplaire affiché était le non-favori. Sonde 6 (`probe/out/06-favori*.json`). Se fait **avant** Task 9. Spec : « Favoris et étiquettes » dans les Amendements.
+
+**Files:**
+- Create: `extension/src/mutations.js`
+- Modify: `extension/src/duplicates.js`, `extension/src/interceptor.js`, `extension/src/controller.js`, `extension/src/main.js`, `extension/manifest.json` (ajouter `src/mutations.js` après `src/duplicates.js`)
+- Test: `tests/mutations.test.js`, `tests/duplicates.test.js`, `tests/interceptor.test.js`, `tests/controller.test.js`, `tests/manifest.test.js`
+
+**Interfaces:**
+- `mutations.js` : `parseMutation({ url, method, body, status }) -> Mutation[]` (tableau vide si rien de reconnu). Seulement si `200 ≤ status < 300`. `url` absolue ou relative ; on ne regarde que le chemin et la requête, quel que soit l'hôte.
+  - `PATCH` sur un chemin finissant par `/rest/v1/user_cards`, requête `id=eq.<id>`, corps JSON objet avec `starred` booléen → `[{ kind: 'starred', entryId: <id>, value }]`. Autres champs du corps ignorés ; `starred` absent ou non booléen → `[]`.
+  - `POST` sur `/rest/v1/user_card_tags`, corps JSON objet `{ user_card_id, tag_id }` ou tableau de tels objets → un `{ kind: 'tagAdd', entryId, tagId }` par objet valide.
+  - `DELETE` sur `/rest/v1/user_card_tags`, requête `user_card_id=eq.<id>&tag_id=eq.<id>` (ordre libre) → `[{ kind: 'tagRemove', entryId, tagId }]` ; un des deux absent → `[]`.
+  - Valeurs `eq.` décodées (`decodeURIComponent`). Corps non chaîne ou JSON invalide → `[]`. Ne lève jamais.
+- `duplicates.js` : représentante = une entrée `starred` de préférence, puis la plus récente (`Date.parse(obtained_at)`). Remplace « non `starred` de préférence ».
+- `interceptor.js` : nouveau rappel optionnel `onResponse({ url, method, body, status })`, appelé pour chaque appel **non intercepté** dont la méthode n'est pas `GET`/`HEAD`, après résolution de la réponse réelle (branche latérale, comme `onSettled` : la valeur et le rejet vus par le site restent ceux de l'original ; une exception du rappel est avalée). `method` en majuscules (de `init.method`, sinon de l'objet `Request`, sinon `GET`). `body` = `init.body` s'il est une chaîne, sinon `null`. Ne lit **jamais** les en-têtes. Le rappel est appelé **avant** que le site ne voie la réponse résolue (attaché à la promesse avant de la rendre).
+- `controller.js` : `applyMutations(list: Mutation[]) -> Promise<void>`.
+  - Synchrone d'abord : si un enregistrement est en mémoire, modifier ses entrées concernées (`starred = value` ; ajout d'étiquette sans doublon ; retrait par `id`) **avant le premier `await`**, et invalider les groupes mémoïsés (la représentante peut changer).
+  - Étiquette ajoutée : objet pris dans `record.template.tagOptions` (`{ id, name, color, user_id, created_at }`, sans `cardCount`) ; inconnue → `{ id: tagId }`.
+  - Puis persistance : `cache.get(userId)` avec `userId = recordUserId ?? await cache.getLastUserId()` ; si l'enregistrement existe, y appliquer les mêmes changements et `cache.put`. Écritures **en série** (une file de promesses) pour ne perdre aucun changement. Une entrée absente du cache est ignorée. Ne change ni `freshness`, ni `loadedAt`, ni `stale`. Erreur de cache → journalisée, avalée.
+  - Fonctionne en `mode: 'off'` aussi (une étoile posée hors mode Doublons doit se voir à l'entrée suivante).
+  - Si l'enregistrement en mémoire a changé et `mode === 'ready'`, notifier `onState` (résumé inchangé, mais la vue peut se redessiner).
+  - Journal : `log('mutation', { kind, entryId })` ; jamais de corps ni d'en-tête.
+- `main.js` : `onResponse: (r) => { const list = W.parseMutation(r); if (list.length) controller.applyMutations(list); }` sur toutes les pages du site (pas seulement `/collection`).
+
+- [ ] **Step 1: Tests qui échouent.**
+  - mutations : les trois formes de la sonde 6 (chemins et corps exacts de `probe/out/06-favori-retrait.json`) → les mutations attendues ; statut 401 → `[]` ; `GET` → `[]` ; corps `{"starred":"yes"}` → `[]` ; corps invalide → `[]` ; `POST` tableau de 2 → 2 mutations ; `DELETE` sans `tag_id` → `[]` ; `PATCH` sur `/rest/v1/user_tags` → `[]` ; URL absolue `https://x.supabase.co/rest/v1/user_cards?id=eq.abc` reconnue.
+  - duplicates : groupe de 2, la plus ancienne `starred` → représentante = la `starred` ; deux non `starred` → la plus récente ; deux `starred` → la plus récente.
+  - interceptor : `PATCH` non intercepté → `onResponse` reçoit `{ url, method: 'PATCH', body: '{"starred":true}', status: 204 }` ; `GET` → jamais ; appel intercepté → jamais ; rappel qui lève → valeur de l'original inchangée ; rejet réseau → pas d'appel, rejet préservé ; `Request` avec `method: 'DELETE'` → `method: 'DELETE'`, `body: null` ; ordre : `onResponse` voit la réponse avant le `.then` du site.
+  - controller : en `ready`, `applyMutations([{ kind: 'starred', entryId: <la non-représentante>, value: true }])` → `respond(LIST)` montre maintenant cet exemplaire, `starred: true`, sans `await` ; puis le cache persistant contient `starred: true` ; `tagAdd` connu → objet complet de `tagOptions`, et `respond` avec `tag_id` le trouve ; `tagAdd` inconnu → `{ id }` ; `tagRemove` ; en `mode: 'off'` (aucun enregistrement en mémoire, cache de `lastUserId`) → cache persistant modifié, puis `enter()` le sert ; deux `applyMutations` sans `await` entre eux → les deux changements persistés ; entrée inconnue → rien ne change ; `freshness` et `loadedAt` inchangés.
+  - manifest : `src/mutations.js` présent, avant `src/controller.js`.
+- [ ] **Step 2: Les voir échouer** — `npm test` → les nouveaux tests en FAIL.
+- [ ] **Step 3: Implémenter** selon les Interfaces (le test de représentante de Task 3 « la non `starred` » est à inverser : c'est voulu).
+- [ ] **Step 4: Les voir passer** — `npm test` → tous PASS ; `node --check` sur chaque fichier d'`extension/src/` ; chargement des fichiers dans l'ordre du manifeste sans `ReferenceError`.
+- [ ] **Step 5: Commit** — `git commit -m "feat: favoris et étiquettes suivis, exemplaire favori affiché"` (git add explicite).
+
+---
+
 ### Task 9: Publication (fil principal, avec Victor)
 
 **Files:**

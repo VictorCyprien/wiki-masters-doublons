@@ -15,6 +15,11 @@ Le script sera partagé avec d'autres joueurs, dont les collections peuvent êtr
 
 La sonde a fait tomber H3 : `count` vaut toujours 1 et un doublon est une **carte présente en plusieurs entrées**. Victor a tranché la nouvelle règle, l'affichage d'une carte par groupe et le rafraîchissement incrémental ; les sections ci-dessous sont mises à jour. Résultats détaillés : `docs/carnet-api.md`. La recherche du site se reproduit exactement (H8 tient) : le repli « recherche approximative » ne sert plus.
 
+**Favoris et étiquettes (Victor, 2026-11-03, après la preuve).** Le site enregistre l'étoile et les étiquettes **par exemplaire**, directement auprès de sa base (sonde 6 : `PATCH …/rest/v1/user_cards?id=eq.<exemplaire>` `{"starred": …}` ; `POST …/rest/v1/user_card_tags` `{user_card_id, tag_id}` ; `DELETE …/rest/v1/user_card_tags?user_card_id=eq.…&tag_id=eq.…`). Ces changements ne bougent ni `total` ni `rarityCounts` : la vérification de fraîcheur ne les voit pas. Règles :
+- L'exemplaire affiché pour un groupe est **l'exemplaire favori d'abord**, puis le plus récent : l'étoile est cochée dès qu'un exemplaire est en favori.
+- Les changements faits dans ce navigateur (en mode Doublons ou non) sont suivis : chaque requête de favori ou d'étiquette **réussie** met à jour les cartes gardées. Seuls l'adresse, la méthode, le corps et le statut sont lus ; jamais les en-têtes (clés, jetons).
+- Les changements faits ailleurs (autre appareil, autre navigateur) apparaissent à la prochaine lecture complète, sans appel en plus : limite écrite dans le README.
+
 ## Objectifs
 
 - Ajouter « Doublons » comme cinquième choix dans la liste déroulante de tri existante (Rareté, Nom, Favoris, Date d'ajout, **Doublons**).
