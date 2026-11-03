@@ -10,7 +10,7 @@ const html = fs.readFileSync(path.join(dir, 'popup.html'), 'utf8');
 const LINKS = [
   'https://buymeacoffee.com/victorcyprien',
   'https://www.tip.md/VictorCyprien',
-  'https://github.com/VictorCyprien/wiki-master-doublons',
+  'https://github.com/VictorCyprien/wiki-masters-doublons',
 ];
 
 test('aucun script en ligne, aucun gestionnaire on…=', () => {
@@ -28,7 +28,7 @@ test('http seulement dans les trois liens attendus', () => {
 
 test('plus aucun lien provisoire ; le lien du code va au dépôt', () => {
   assert.doesNotMatch(html, /A-REMPLACER/);
-  assert.match(html, /href="https:\/\/github\.com\/VictorCyprien\/wiki-master-doublons"/);
+  assert.match(html, /href="https:\/\/github\.com\/VictorCyprien\/wiki-masters-doublons"/);
 });
 
 test('textes exacts', () => {

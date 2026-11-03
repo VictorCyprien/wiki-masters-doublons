@@ -41,7 +41,7 @@ Chrome affiche « Lire et modifier tes données sur wiki-masters.com ». C'est n
 • Fonctionne avec Chrome 111 ou plus.
 
 SUPPORT
-Un souci, une idée ? Ouvre une issue : https://github.com/VictorCyprien/wiki-master-doublons/issues
+Un souci, une idée ? Ouvre une issue : https://github.com/VictorCyprien/wiki-masters-doublons/issues
 L'extension est gratuite. Si elle te rend service, tu peux m'offrir un café depuis sa fenêtre.
 
 Version 1.0.0 : première version.
@@ -70,10 +70,10 @@ Français
 
 ### Screenshot Notes
 
-Victor les fait dans son Chrome, et les valide avant usage (elles montrent sa collection).
-1. La collection en mode Doublons : cartes avec badge ×N et la ligne de résumé.
-2. Le menu de tri ouvert, avec le choix « Doublons ».
-3. La progression de la première lecture (« Lecture de ta collection… page 4 / 271 »).
+Faites à partir des captures de Victor (sa collection), avec fond sombre et titre ; modèles dans `tools/store-assets/`.
+1. « Tous tes doublons d'un coup d'œil » : la collection en mode Doublons, cartes avec badge ×N.
+2. « Un choix de plus dans le tri » : le menu de tri ouvert, avec le choix « Doublons ».
+3. « Rien à configurer, rien qui sort » : la fenêtre de l'extension (clic sur l'icône).
 
 ## Permissions Justification
 
@@ -114,7 +114,7 @@ L'extension ne déclare **aucune** entrée `permissions` ni `host_permissions` d
 
 **Privacy Policy URL**
 
-https://github.com/VictorCyprien/wiki-master-doublons/blob/main/PRIVACY.md
+https://github.com/VictorCyprien/wiki-masters-doublons/blob/main/PRIVACY.md
 
 (doit être en ligne et accessible avant la soumission)
 
@@ -129,9 +129,9 @@ https://github.com/VictorCyprien/wiki-master-doublons/blob/main/PRIVACY.md
 
 **Contact Email**: à compléter par Victor (affiché publiquement ; doit être surveillé)
 
-**Support URL**: https://github.com/VictorCyprien/wiki-master-doublons/issues
+**Support URL**: https://github.com/VictorCyprien/wiki-masters-doublons/issues
 
-**Homepage URL**: https://github.com/VictorCyprien/wiki-master-doublons
+**Homepage URL**: https://github.com/VictorCyprien/wiki-masters-doublons
 
 ## Version History
 
@@ -146,6 +146,8 @@ https://github.com/VictorCyprien/wiki-master-doublons/blob/main/PRIVACY.md
 - Extension non officielle : le nom contient « (non officiel) » et « Wiki Masters » sert à dire pour quel site elle est faite. Risque de remarque sur la marque : si demandé, répondre qu'elle est indépendante et le dit partout.
 - Première lecture longue (environ 2 minutes pour 1 000 cartes) : indiqué dans la description.
 - Les liens de soutien (Buy Me a Coffee, tip.md) sont seulement dans la fenêtre de l'extension, ouverts au clic.
+- Première publication depuis le compte développeur étudiant de Victor (le compte pro ne passe pas encore la vérification). Transfert prévu vers le compte pro par le formulaire de transfert du Chrome Web Store, avant la fin du compte étudiant.
+- Le zip 1.0.0 envoyé garde, dans la fenêtre, le lien « Code source » vers l'ancien nom du dépôt (`wiki-master-doublons`, redirigé par GitHub) ; corrigé sur `develop` pour la version suivante.
 
 ### Rejection History
 Aucune pour l'instant.
