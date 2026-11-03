@@ -154,7 +154,6 @@
       }
     }
 
-    // Lecture complète puis vérification : cartes gagnées pendant la lecture, total frais.
     // Repère des ajouts d'une lecture complète : un appel « Date d'ajout » (deps.fetchNewest) ; échec -> null.
     async function readNewest(mine, f) {
       if (typeof deps.fetchNewest !== 'function') return f.newest ?? null;
@@ -168,6 +167,7 @@
       }
     }
 
+    // Lecture complète puis vérification : cartes gagnées pendant la lecture, total frais.
     async function fullRead(mine, f) {
       // Sans identifiant de compte, rien ne peut être rangé ni repris : on ne lit pas (la collection vide reste permise).
       if (f.userId == null && f.total > 0) throw new Error('compte inconnu');
