@@ -155,6 +155,19 @@
     }
 
     // Lecture complète puis vérification : cartes gagnées pendant la lecture, total frais.
+    // Repère des ajouts d'une lecture complète : un appel « Date d'ajout » (deps.fetchNewest) ; échec -> null.
+    async function readNewest(mine, f) {
+      if (typeof deps.fetchNewest !== 'function') return f.newest ?? null;
+      try {
+        const t = await step(mine, (async () => deps.fetchNewest({ signal: ctrl?.signal }))());
+        return typeof t === 'number' && Number.isFinite(t) ? t : null;
+      } catch (err) {
+        if (err === STALE) throw err;
+        log('newest:unknown');
+        return null;
+      }
+    }
+
     async function fullRead(mine, f) {
       // Sans identifiant de compte, rien ne peut être rangé ni repris : on ne lit pas (la collection vide reste permise).
       if (f.userId == null && f.total > 0) throw new Error('compte inconnu');
@@ -166,7 +179,9 @@
       // Base des ajouts/retraits : la fraîcheur de départ, ou celle du partiel en reprise.
       // total et newest viennent toujours du même moment : les instantanés gardent la base, pas f.total
       // (sinon les cartes ajoutées entre deux reprises seraient comptées deux fois : faux « masked »).
-      const base = partial ? { total: partial.total, newest: partial.newest } : { total: f.total, newest: f.newest ?? null };
+      // newest se lit APRÈS la fraîcheur : une carte arrivée entre les deux est alors plus ancienne que
+      // newest et absente de f.total, donc jamais comptée deux fois (pas de faux « masked »).
+      const base = partial ? { total: partial.total, newest: partial.newest } : { total: f.total, newest: await readNewest(mine, f) };
       setState({ mode: 'loading', error: null, resumeAt: null, progress: { phase: 'full', pagesRead: startPage, pageCount, retryInMs: null } });
       const signal = ctrl.signal;
       const onProgress = progressFn(mine, 'full');

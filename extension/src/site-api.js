@@ -6,7 +6,7 @@
     PAGE_SIZE: 50,
     LOAD_SORT: 'rarity',
     DATE_SORT: 'added',
-    FRESHNESS_URL: '/api/my-collection?sort=added&page=0&stats=1',
+    FRESHNESS_URL: '/api/my-collection?sort=rarity&page=0&stats=1',
   });
 
   const SITE_ORIGIN = 'https://www.wiki-masters.com';
@@ -69,24 +69,33 @@
     const counts = json.rarityCounts ?? {};
     const sorted = Object.fromEntries(Object.entries(counts).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
     const total = json.total ?? null;
-    // Entrée la plus récente (tri « Date d'ajout », plus récentes d'abord) : repère des ajouts d'une lecture.
-    // Repli prudent : si la page n'est pas triée du plus récent au plus ancien (tri ignoré par le serveur),
-    // ou si une date manque, newest vaut null et le contrôle des retraits masqués est sauté.
+    return {
+      userId: parseList(json)[0]?.user_id ?? null,
+      total,
+      freshness: total + '|' + JSON.stringify(sorted),
+      template: json,
+    };
+  }
+
+  // Date (ms) de l'entrée la plus récente d'une page triée « Date d'ajout » (sort=added, stats=0 :
+  // avec stats=1 le serveur ignore le tri, vu en vrai le 2026-11-03). Repli prudent : page non triée
+  // du plus récent au plus ancien, ou date illisible -> null (le contrôle des retraits masqués est sauté).
+  function readNewest(json) {
     let newest = null;
     let prev = Infinity;
     for (const e of parseList(json)) {
       const t = Date.parse(e?.obtained_at);
-      if (!Number.isFinite(t) || t > prev) { newest = null; break; }
+      if (!Number.isFinite(t) || t > prev) return null;
       if (newest === null) newest = t;
       prev = t;
     }
-    return {
-      userId: parseList(json)[0]?.user_id ?? null,
-      total,
-      newest,
-      freshness: total + '|' + JSON.stringify(sorted),
-      template: json,
-    };
+    return newest;
+  }
+
+  async function fetchNewest(fetchFn, { signal } = {}) {
+    const res = await fetchFn(buildPageUrl(0, SITE.DATE_SORT), { credentials: 'same-origin', signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return readNewest(await res.json());
   }
 
   async function fetchFreshness(fetchFn, { signal } = {}) {
@@ -96,7 +105,7 @@
   }
 
   const api = { SITE, classifyUrl, parseSiteQuery, buildPageUrl, parseList, buildListResponse,
-    buildStatsResponse, readFreshness, fetchFreshness };
+    buildStatsResponse, readFreshness, fetchFreshness, readNewest, fetchNewest };
   globalThis.__wmDoublons = Object.assign(globalThis.__wmDoublons || {}, api);
   if (typeof module !== 'undefined') module.exports = api;
 })();

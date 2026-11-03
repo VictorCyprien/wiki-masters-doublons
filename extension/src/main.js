@@ -74,6 +74,7 @@
       log,
       IncompleteLoadError: W.IncompleteLoadError,
       fetchFreshness: () => W.fetchFreshness(serialFetch),
+      fetchNewest: ({ signal } = {}) => W.fetchNewest(serialFetch, { signal }),
       loadAll: (o) => W.loadAllPages({
         ...loaderBase, ...o,
         fetchPage: (page, signal) => serialFetch(W.buildPageUrl(page, W.SITE.LOAD_SORT), readOpts(signal)),

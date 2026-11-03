@@ -1075,7 +1075,10 @@ function fakeServer(entries) {
       return src.slice(p * 50, p * 50 + 50);
     },
     freshness() {
-      return siteApi.readFreshness({ collection: this.page(0, 'added'), total: rows.length, rarityCounts: counts(), tagOptions: [] });
+      return siteApi.readFreshness({ collection: this.page(0, 'rarity'), total: rows.length, rarityCounts: counts(), tagOptions: [] });
+    },
+    newest() {
+      return siteApi.readNewest({ collection: this.page(0, 'added') });
     },
   };
 }
@@ -1089,6 +1092,7 @@ function realSetup(srv, onFetch = () => {}, over = {}) {
   };
   return setup({
     fetchFreshness: async () => srv.freshness(),
+    fetchNewest: async () => srv.newest(),
     IncompleteLoadError: L.IncompleteLoadError,
     loadAll: (o) => L.loadAllPages({ ...base, ...o, fetchPage: fetchPage('rarity') }),
     loadNew: (o) => L.loadNewEntries({ ...base, ...o, fetchPage: fetchPage('added') }),
@@ -1274,7 +1278,7 @@ test('fraîcheur sans entrée lisible (newest null) : seuls les contrôles actue
   let once = false;
   const { c } = realSetup(srv, (page, sort) => {
     if (sort === 'rarity' && page === 0 && !once) { once = true; srv.remove('e10'); srv.set([...srv.rows(), newCard('Z')]); }
-  }, { fetchFreshness: async () => ({ ...srv.freshness(), newest: null }) });
+  }, { fetchNewest: async () => null });
   await c.enter();
   assert.equal(c.getState().mode, 'ready');
 });
@@ -1356,7 +1360,8 @@ test('deux reprises avec un paquet ouvert entre les deux : la troisième visite 
     c = createController({
       site: { ...siteApi, PAGE_SIZE: 50 }, dup: dupApi, cache, now: () => 1000, onState: () => {},
       log: (ev, d) => logs.push([ev, d]), IncompleteLoadError,
-      fetchFreshness: async () => siteApi.readFreshness({ collection: byAdded().slice(0, 50), total: rows.length, rarityCounts: counts(), tagOptions: [] }),
+      fetchFreshness: async () => siteApi.readFreshness({ collection: rows.slice(0, 50), total: rows.length, rarityCounts: counts(), tagOptions: [] }),
+      fetchNewest: async () => siteApi.readNewest({ collection: byAdded().slice(0, 50) }),
       loadAll: (o) => L.loadAllPages({ ...base, ...o, fetchPage: fetchPage('rarity') }),
       loadNew: (o) => L.loadNewEntries({ ...base, ...o, fetchPage: fetchPage('added') }),
     });
@@ -1371,4 +1376,29 @@ test('deux reprises avec un paquet ouvert entre les deux : la troisième visite 
   await v3.c.enter();
   assert.deepEqual(v3.logs.filter(([e]) => e === 'load:mismatch'), []);
   assert.equal(v3.c.getState().mode, 'ready');
+});
+
+test('fetchNewest échoue : lecture complète menée quand même, contrôle des retraits masqués sauté', async () => {
+  const srv = fakeServer(oldEntries(200));
+  const logs = [];
+  const { c } = realSetup(srv, () => {}, { fetchNewest: async () => { throw new Error('réseau'); }, log: (ev, d) => logs.push([ev, d]) });
+  await c.enter();
+  assert.equal(c.getState().mode, 'ready');
+  assert.ok(logs.some(([e]) => e === 'newest:unknown'));
+});
+
+test('fetchNewest est appelé après la fraîcheur, une fois par lecture complète, jamais sur cache frais', async () => {
+  const srv = fakeServer(oldEntries(200));
+  const order = [];
+  const { c } = realSetup(srv, () => {}, {
+    fetchFreshness: async () => { order.push('fresh'); return srv.freshness(); },
+    fetchNewest: async () => { order.push('newest'); return srv.newest(); },
+  });
+  await c.enter();
+  assert.deepEqual(order.slice(0, 2), ['fresh', 'newest']);
+  assert.equal(order.filter((x) => x === 'newest').length, 1);
+  order.length = 0;
+  c.exit();
+  await c.enter(); // cache frais : un seul appel de fraîcheur
+  assert.deepEqual(order, ['fresh']);
 });

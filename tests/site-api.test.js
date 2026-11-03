@@ -96,31 +96,40 @@ test('fetchFreshness', async () => {
   await assert.rejects(fetchFreshness(async () => ({ ok: false, status: 500, json: async () => ({}) })));
 });
 
-test('FRESHNESS_URL : tri « Date d\'ajout », page 0, stats', () => {
-  assert.equal(SITE.FRESHNESS_URL, '/api/my-collection?sort=added&page=0&stats=1');
+test('FRESHNESS_URL : tri rareté (avec stats=1, le serveur ignore le tri)', () => {
+  assert.equal(SITE.FRESHNESS_URL, '/api/my-collection?sort=rarity&page=0&stats=1');
 });
 
-test('readFreshness : newest = plus grand obtained_at (ms), template inchangé', () => {
+test('fetchNewest : page 0 « Date d\'ajout » sans stats, rend la date la plus récente', async () => {
+  const calls = [];
+  const fetchFn = async (url) => { calls.push(url); return { ok: true, json: async () => ({ collection: [
+    { obtained_at: '2026-11-02T10:00:00+00:00' }, { obtained_at: '2026-11-01T10:00:00+00:00' }] }) }; };
+  assert.equal(await api.fetchNewest(fetchFn), Date.parse('2026-11-02T10:00:00+00:00'));
+  assert.deepEqual(calls, ['/api/my-collection?sort=added&page=0&stats=0']);
+  await assert.rejects(api.fetchNewest(async () => ({ ok: false, status: 500 })));
+});
+
+test('readNewest : page non triée par date -> null ; readFreshness ne rend plus newest', () => {
   const r = readFreshness(page0Stats1);
-  assert.equal(r.newest, Date.parse('2026-11-02T11:46:45.895091+00:00'));
+  assert.equal(r.newest, undefined);
   assert.equal(r.template, page0Stats1);
-  const mixed = readFreshness({ collection: [
+  const mixed = api.readNewest({ collection: [
     makeEntry({ obtainedAt: '2026-10-01T00:00:00+00:00' }), makeEntry({ obtainedAt: '2026-11-01T00:00:00+00:00' }),
     makeEntry({ obtainedAt: 'pas une date' }),
-  ], total: 3, rarityCounts: {} });
-  assert.equal(mixed.newest, null); // page non triée par date ou date illisible : repli prudent
+  ] });
+  assert.equal(mixed, null); // page non triée par date ou date illisible : repli prudent
 });
 
-test('readFreshness : aucune entrée lisible -> newest null', () => {
-  assert.equal(readFreshness({ collection: [], total: 0, rarityCounts: {} }).newest, null);
-  assert.equal(readFreshness({ total: 3 }).newest, null);
-  assert.equal(readFreshness({ collection: [{ obtained_at: 'x' }, {}], total: 2 }).newest, null);
+test('readNewest : aucune entrée lisible -> null', () => {
+  assert.equal(api.readNewest({ collection: [] }), null);
+  assert.equal(api.readNewest({ total: 3 }), null);
+  assert.equal(api.readNewest({ collection: [{ obtained_at: 'x' }, {}] }), null);
 });
 
-test('readFreshness : page qui n\'est pas triée du plus récent au plus ancien -> newest null (repli prudent)', () => {
+test('readNewest : page qui n\'est pas triée du plus récent au plus ancien -> newest null (repli prudent)', () => {
   const mk = (id, t) => ({ id, user_id: 'user-A', obtained_at: t, card: {} });
-  const ok = readFreshness({ collection: [mk('a', '2026-11-02T10:00:00+00:00'), mk('b', '2026-11-02T10:00:00+00:00'), mk('c', '2026-11-01T09:00:00.5+00:00')], total: 3, rarityCounts: {} });
-  assert.equal(ok.newest, Date.parse('2026-11-02T10:00:00+00:00'));
-  const ko = readFreshness({ collection: [mk('a', '2026-11-01T10:00:00+00:00'), mk('b', '2026-11-02T10:00:00+00:00')], total: 2, rarityCounts: {} });
-  assert.equal(ko.newest, null);
+  const ok = api.readNewest({ collection: [mk('a', '2026-11-02T10:00:00+00:00'), mk('b', '2026-11-02T10:00:00+00:00'), mk('c', '2026-11-01T09:00:00.5+00:00')] });
+  assert.equal(ok, Date.parse('2026-11-02T10:00:00+00:00'));
+  const ko = api.readNewest({ collection: [mk('a', '2026-11-01T10:00:00+00:00'), mk('b', '2026-11-02T10:00:00+00:00')] });
+  assert.equal(ko, null);
 });
