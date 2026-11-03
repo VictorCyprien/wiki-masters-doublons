@@ -32,3 +32,7 @@ test('src/mutations.js présent, avant src/controller.js', () => {
   assert.ok(js.includes('src/mutations.js'));
   assert.ok(js.indexOf('src/mutations.js') < js.indexOf('src/controller.js'));
 });
+
+test('Chrome 111 au minimum (world MAIN ignoré avant)', () => {
+  assert.equal(manifest.minimum_chrome_version, '111');
+});

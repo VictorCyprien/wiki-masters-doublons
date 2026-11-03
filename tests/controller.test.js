@@ -1206,3 +1206,33 @@ test('identifiant de compte absent et collection non vide : aucune lecture, erre
   assert.equal(calls.loadNew.length, 0);
   assert.ok(states.length > 0);
 });
+
+test('autre compte pendant un rafraîchissement : les comptes des badges de l\'ancien compte sont oubliés', async () => {
+  const old = ents(3, 'o');
+  let user = 'u1';
+  const gate = deferred();
+  const { c, cache, calls } = setup({
+    fetchFreshness: async () => fresh({ userId: user, total: 3 }),
+    loadNew: async () => ({ entries: [] }),
+    loadAll: async (o) => { calls.loadAll.push(o); await gate.promise; return { entries: ents(3, 'm') }; },
+  });
+  await cache.put('u1', rec(old, { total: 3 }));
+  await c.enter();
+  c.respond(LIST);
+  assert.notEqual(c.getState().pageCounts, null);
+  user = 'u2';
+  const p = c.refresh();
+  for (let i = 0; i < 10; i += 1) await tick();
+  assert.equal(c.getState().mode, 'loading');
+  assert.equal(c.getState().pageCounts, null);
+  assert.equal(c.getState().summary, null);
+  gate.resolve();
+  await p;
+});
+
+test('pageCounts vaut null quand rien n\'est servi (erreur sans enregistrement)', async () => {
+  const { c } = setup({ fetchFreshness: async () => { throw new Error('x'); } });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().pageCounts, null);
+});

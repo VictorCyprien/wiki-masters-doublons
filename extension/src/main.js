@@ -19,7 +19,7 @@
       target: window,
       shouldIntercept: (u) => onCollection() && controller !== null && controller.shouldIntercept(u),
       // async : le fetch du site renvoie toujours une Promesse ; une exception devient un rejet (repli).
-      respond: async (u) => W.controller.respond(u),
+      respond: async (u) => controller.respond(u),
       isWatched: (u) => W.classifyUrl(u) === 'list',
       isObserved: (u, m) => W.isMutationCandidate(u, m),
       onSettled: () => { waiters.forEach((w) => w()); },
@@ -164,7 +164,8 @@
         const listbox = trigger && W.findSortListbox(document, trigger);
         if (listbox) W.injectOption(listbox, { label: W.LABELS.option, selected: state.mode !== 'off', onSelect: selectDoublons });
         W.renderStatus(document, state, now(), { onRefresh: refresh });
-        W.badgeCards(document, state.mode === 'ready' ? state.pageCounts : null);
+        // badges gardés pendant un rafraîchissement (mode loading) ; pageCounts vaut null quand rien n'est servi
+        W.badgeCards(document, state.mode === 'off' ? null : state.pageCounts);
         if (state.mode === 'ready') {
           labelOn = true;
           W.showTriggerLabel(trigger, W.LABELS.option);

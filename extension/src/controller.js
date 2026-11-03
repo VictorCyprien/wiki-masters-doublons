@@ -273,7 +273,10 @@
 
     // Autre compte : plus rien de l'ancien n'est servi pendant la lecture.
     function dropIfOtherAccount(f) {
-      if (f.userId != null && recordUserId != null && f.userId !== recordUserId) adopt(null, null);
+      if (f.userId != null && recordUserId != null && f.userId !== recordUserId) {
+        adopt(null, null);
+        setState({ pageCounts: null, summary: null }); // les badges ne gardent rien de l'ancien compte
+      }
     }
 
     async function refreshBody(mine) {
