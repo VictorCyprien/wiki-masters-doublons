@@ -155,6 +155,8 @@
 
     // Lecture complète puis vérification : cartes gagnées pendant la lecture, total frais.
     async function fullRead(mine, f) {
+      // Sans identifiant de compte, rien ne peut être rangé ni repris : on ne lit pas (la collection vide reste permise).
+      if (f.userId == null && f.total > 0) throw new Error('compte inconnu');
       const pageCount = Math.ceil(f.total / site.PAGE_SIZE);
       const uid0 = f.userId ?? null;
       const partial = await loadPartial(mine, uid0, pageCount, f);

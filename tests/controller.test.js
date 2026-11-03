@@ -140,11 +140,10 @@ test('setLastUserId après chaque fetchFreshness réussi', async () => {
   assert.equal(await cache.getLastUserId(), 'u7');
 });
 
-test('userId null : pas de put ni setLastUserId', async () => {
-  const e = ents(5);
+test('userId null, collection vide : pas de put ni setLastUserId', async () => {
   const { c, cache } = setup({
-    fetchFreshness: async () => fresh({ userId: null }),
-    loadAll: async () => ({ entries: e }),
+    fetchFreshness: async () => fresh({ userId: null, total: 0 }),
+    loadAll: async () => ({ entries: [] }),
   });
   await c.enter();
   assert.equal(c.getState().mode, 'ready');
@@ -1193,4 +1192,17 @@ test('rafraîchissement : carte ajoutée entre deux pages de loadNew, aucun doub
     const stats = c.respond('/api/my-collection/stats?sort=rarity');
     assert.equal(stats.total, 0); // aucun doublon dans ces données : pas de ×2 fantôme
   }
+});
+
+test('identifiant de compte absent et collection non vide : aucune lecture, erreur inattendue', async () => {
+  const { c, calls, states } = setup({ fetchFreshness: async () => fresh({ userId: null, total: 5 }) });
+  await c.enter();
+  assert.equal(c.getState().mode, 'error');
+  assert.equal(c.getState().error, 'unexpected');
+  c.exit();
+  await c.enter();
+  assert.equal(c.getState().error, 'unexpected');
+  assert.equal(calls.loadAll.length, 0);
+  assert.equal(calls.loadNew.length, 0);
+  assert.ok(states.length > 0);
 });
