@@ -8,8 +8,8 @@ const dir = path.join(__dirname, '..', 'extension', 'popup');
 const html = fs.readFileSync(path.join(dir, 'popup.html'), 'utf8');
 
 const LINKS = [
-  'https://buymeacoffee.com/A-REMPLACER',
-  'https://tip.md/A-REMPLACER',
+  'https://buymeacoffee.com/victorcyprien',
+  'https://www.tip.md/VictorCyprien',
   'https://github.com/A-REMPLACER/wiki-masters-doublons',
 ];
 
@@ -26,10 +26,11 @@ test('http seulement dans les trois liens attendus', () => {
   assert.doesNotMatch(fs.readFileSync(path.join(dir, 'popup.css'), 'utf8'), /https?:|@import|url\(\s*['"]?(?!\.\.\/icons)/);
 });
 
-test('A-REMPLACER seulement dans les trois liens', () => {
+test('A-REMPLACER seulement dans le lien GitHub', () => {
   const stripped = html.replace(/href="[^"]*A-REMPLACER[^"]*"/g, '');
   assert.doesNotMatch(stripped, /A-REMPLACER/);
-  assert.equal((html.match(/A-REMPLACER/g) || []).length, 3);
+  assert.equal((html.match(/A-REMPLACER/g) || []).length, 1);
+  assert.match(html, /href="https:\/\/github\.com\/A-REMPLACER\/wiki-masters-doublons"/);
 });
 
 test('textes exacts', () => {
