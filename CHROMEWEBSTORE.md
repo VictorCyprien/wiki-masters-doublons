@@ -127,6 +127,8 @@ https://github.com/VictorCyprien/wiki-masters-doublons/blob/main/PRIVACY.md
 
 **Publisher Name**: Victor Cyprien
 
+**Trader Status (UE)**: Non professionnel (non-trader), déclaré le 2026-11-03 : extension gratuite, projet personnel hors de la micro-entreprise, tips occasionnels. À revoir au transfert vers le compte pro, ou si l'extension entre dans la micro-entreprise (facturation, chiffre d'affaires, version payante).
+
 **Contact Email**: à compléter par Victor (affiché publiquement ; doit être surveillé)
 
 **Support URL**: https://github.com/VictorCyprien/wiki-masters-doublons/issues
