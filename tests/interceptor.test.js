@@ -206,7 +206,7 @@ function withOnResponse(fetchImpl, over = {}) {
   const seen = [];
   installInterceptor({
     target, shouldIntercept: () => false, respond: () => ({}),
-    onResponse: (r) => seen.push(r), ...over,
+    isObserved: () => true, onResponse: (r) => seen.push(r), ...over,
   });
   return { target, seen };
 }
@@ -277,4 +277,30 @@ test('onResponse : ReadableStream et FormData donnent body null, corps non conso
   assert.equal(seen[0].body, null);
   assert.equal(seen[1].body, null);
   assert.equal(stream.locked, false);
+});
+
+test('isObserved : défaut faux, le corps n\'est pas lu et onResponse n\'est pas appelé', async () => {
+  let reads = 0;
+  const init = { method: 'POST', get body() { reads += 1; return '{}'; } };
+  const { target, seen } = withOnResponse(okFetch(204), { isObserved: undefined });
+  await target.fetch('/rest/v1/user_cards?id=eq.a', init);
+  assert.equal(reads, 0);
+  assert.deepEqual(seen, []);
+});
+
+test('isObserved reçoit url et méthode ; faux : corps jamais lu', async () => {
+  let reads = 0;
+  const asked = [];
+  const init = { method: 'patch', get body() { reads += 1; return '{}'; } };
+  const { target, seen } = withOnResponse(okFetch(204), { isObserved: (u, m) => { asked.push([u, m]); return false; } });
+  await target.fetch('/autre', init);
+  assert.deepEqual(asked, [['/autre', 'PATCH']]);
+  assert.equal(reads, 0);
+  assert.deepEqual(seen, []);
+});
+
+test('isObserved vrai : le corps est lu et transmis', async () => {
+  const { target, seen } = withOnResponse(okFetch(204), { isObserved: (u, m) => m === 'PATCH' });
+  await target.fetch('/x', { method: 'PATCH', body: '{"a":1}' });
+  assert.equal(seen[0].body, '{"a":1}');
 });

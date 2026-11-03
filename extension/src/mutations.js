@@ -45,7 +45,20 @@
     }
   }
 
-  const api = { parseMutation };
+  // Appel susceptible d'être un changement de favori ou d'étiquette (chemin et méthode seulement).
+  function isMutationCandidate(url, method) {
+    try {
+      const m = String(method || '').toUpperCase();
+      const path = new URL(String(url), 'https://placeholder.invalid').pathname;
+      if (path.endsWith('/rest/v1/user_cards')) return m === 'PATCH';
+      if (path.endsWith('/rest/v1/user_card_tags')) return m === 'POST' || m === 'DELETE';
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  const api = { parseMutation, isMutationCandidate };
   const root = (globalThis.__wmDoublons ??= {});
   Object.assign(root, api);
   if (typeof module !== 'undefined') module.exports = api;

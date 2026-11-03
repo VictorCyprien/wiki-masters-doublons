@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseMutation } = require('../extension/src/mutations.js');
+const { parseMutation, isMutationCandidate } = require('../extension/src/mutations.js');
 
 const ID = 'e6802c13-f7c0-49ee-8a36-cd11aabba3cd';
 const TAG = '92158624-7aba-4e00-832d-e5d5571d2c52';
@@ -91,4 +91,15 @@ test('ne lève jamais', () => {
   assert.deepEqual(parseMutation(), []);
   assert.deepEqual(parseMutation({}), []);
   assert.deepEqual(parseMutation({ url: null, method: 'PATCH', status: 200 }), []);
+});
+
+test('isMutationCandidate : chemins et méthodes de favori et d\'étiquette seulement', () => {
+  assert.equal(isMutationCandidate(`/rest/v1/user_cards?id=eq.${ID}`, 'patch'), true);
+  assert.equal(isMutationCandidate('https://x.test/rest/v1/user_cards?id=eq.1', 'PATCH'), true);
+  assert.equal(isMutationCandidate('/rest/v1/user_cards', 'POST'), false);
+  assert.equal(isMutationCandidate('/rest/v1/user_card_tags', 'POST'), true);
+  assert.equal(isMutationCandidate('/rest/v1/user_card_tags?a=eq.1', 'DELETE'), true);
+  assert.equal(isMutationCandidate('/rest/v1/user_card_tags', 'PATCH'), false);
+  assert.equal(isMutationCandidate('/api/boosters', 'POST'), false);
+  assert.equal(isMutationCandidate(undefined, undefined), false);
 });

@@ -21,6 +21,7 @@
       // async : le fetch du site renvoie toujours une Promesse ; une exception devient un rejet (repli).
       respond: async (u) => W.controller.respond(u),
       isWatched: (u) => W.classifyUrl(u) === 'list',
+      isObserved: (u, m) => W.isMutationCandidate(u, m),
       onSettled: () => { waiters.forEach((w) => w()); },
       // Favori ou étiquette changé sur le site : le cache et l'enregistrement servi suivent.
       onResponse: (r) => {

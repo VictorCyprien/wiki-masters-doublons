@@ -20,7 +20,7 @@
 
   function installInterceptor({
     target, shouldIntercept, respond,
-    isWatched = () => false, onSettled = () => {}, onResponse = () => {}, onFallback = () => {}, log = () => {},
+    isWatched = () => false, isObserved = () => false, onSettled = () => {}, onResponse = () => {}, onFallback = () => {}, log = () => {},
   }) {
     const originalFetch = target.fetch;
     const safeLog = (...a) => { try { log(...a); } catch { /* ignoré */ } };
@@ -36,7 +36,7 @@
         try { onSettled(url, intercepted); } catch { /* ignoré */ }
       };
 
-      // Appel non-GET non substitué : le rappel voit url, méthode, corps texte et statut (jamais d'en-tête).
+      // Appel non-GET non substitué et candidat (isObserved) : le rappel voit url, méthode, corps texte et statut (jamais d'en-tête).
       const observe = (result) => {
         let method = 'GET';
         let body = null;
@@ -44,6 +44,8 @@
           const m = (init && init.method) || (input && typeof input === 'object' && input.method) || 'GET';
           method = String(m).toUpperCase();
           if (method === 'GET' || method === 'HEAD') return;
+          // le corps n'est lu que pour un appel que l'extension sait exploiter
+          if (!isObserved(url, method)) return;
           body = init && typeof init.body === 'string' ? init.body : null;
           if (!isThenable(result)) return;
         } catch { return; }
