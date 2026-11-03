@@ -1335,3 +1335,40 @@ test('motif du mismatch journalisé : removal, total, rarity', async () => {
   let n = 0;
   assert.deepEqual(await run({ fetchFreshness: async () => (n++ === 0 ? fresh({ total: 6 }) : fresh({ total: 5 })) }), [{ reason: 'removal' }]);
 });
+
+test('deux reprises avec un paquet ouvert entre les deux : la troisième visite finit prête (pas de faux « masked »)', async () => {
+  const L = require('../extension/src/loader.js');
+  const at = (s) => new Date(Date.UTC(2026, 9, 1) + s * 1000).toISOString().replace('Z', '+00:00');
+  let rows = Array.from({ length: 1200 }, (_, i) => makeEntry({ id: `e${i}`, title: `t${i}`, obtainedAt: at(-i) }));
+  const byAdded = () => rows.slice().sort((a, b) => Date.parse(b.obtained_at) - Date.parse(a.obtained_at));
+  const counts = () => rows.reduce((a, e) => ((a[e.card.rarity] = (a[e.card.rarity] || 0) + 1), a), {});
+  const cache = createCache(memoryStore());
+  const visit = (stopAt) => {
+    const logs = [];
+    const base = { parseList: siteApi.parseList, sleep: async () => {}, now: () => 0, log: () => {} };
+    let c;
+    const fetchPage = (sort) => async (page, signal) => {
+      if (sort === 'rarity' && page === stopAt) c.exit(); // l'utilisateur quitte la page après un point de sauvegarde
+      if (signal?.aborted) throw Object.assign(new Error('a'), { name: 'AbortError' });
+      const list = sort === 'added' ? byAdded() : rows;
+      return { ok: true, status: 200, json: async () => ({ collection: list.slice(page * 50, page * 50 + 50) }), headers: { get: () => null } };
+    };
+    c = createController({
+      site: { ...siteApi, PAGE_SIZE: 50 }, dup: dupApi, cache, now: () => 1000, onState: () => {},
+      log: (ev, d) => logs.push([ev, d]), IncompleteLoadError,
+      fetchFreshness: async () => siteApi.readFreshness({ collection: byAdded().slice(0, 50), total: rows.length, rarityCounts: counts(), tagOptions: [] }),
+      loadAll: (o) => L.loadAllPages({ ...base, ...o, fetchPage: fetchPage('rarity') }),
+      loadNew: (o) => L.loadNewEntries({ ...base, ...o, fetchPage: fetchPage('added') }),
+    });
+    return { c, logs };
+  };
+  const v1 = visit(12);
+  await v1.c.enter(); await new Promise((r) => setTimeout(r, 10));
+  rows = [...rows, makeEntry({ id: 'P1', title: 'P1', obtainedAt: at(100) }), makeEntry({ id: 'P2', title: 'P2', obtainedAt: at(100) })];
+  const v2 = visit(21);
+  await v2.c.enter(); await new Promise((r) => setTimeout(r, 10));
+  const v3 = visit(-1);
+  await v3.c.enter();
+  assert.deepEqual(v3.logs.filter(([e]) => e === 'load:mismatch'), []);
+  assert.equal(v3.c.getState().mode, 'ready');
+});

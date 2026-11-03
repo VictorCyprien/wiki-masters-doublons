@@ -83,7 +83,7 @@ Sonde faite le 2026-11-02 dans le Chrome de Victor (console DevTools), son compt
 | `SEARCH_PARAM`, `TAGS_PARAM`, `RARITY_PARAM` | `q`, `tag_id` (un uuid), `rarity` (une valeur vue ; accepter aussi plusieurs, séparées par `,` ou répétées) |
 | `SEARCH_RULE` | `exact` : `normalize(q)` sous-chaîne de `normalize(card.wikipedia_title)` ou de `normalize(card.category)`, `normalize` = minuscules + NFD + diacritiques retirés |
 | `TAG_MATCH` | `entry.tags.some(t => t.id === tag_id)` |
-| `FRESHNESS_URL` / `FRESHNESS_FIELD` | `/api/my-collection?sort=rarity&page=0&stats=1` / `total + '|' + JSON.stringify(rarityCounts)` |
+| `FRESHNESS_URL` / `FRESHNESS_FIELD` | `/api/my-collection?sort=added&page=0&stats=1` (depuis 2026-11-03 : la page des plus récentes donne aussi `newest`, repère des retraits masqués ; ordre `sort=added` + `stats=1` à confirmer en vrai, repli `newest = null` si la page n'est pas triée) / `total + '|' + JSON.stringify(rarityCounts)` |
 | `TRANSPORT` | `fetch` |
 | `COUNT_SHOWN_BY_SITE` | `false` |
 | `REFETCH_TRIGGER` | choisir un **autre** tri natif, puis revenir au tri courant (un couple d'appels à chaque fois) ; re-choisir le tri courant ne déclenche rien |

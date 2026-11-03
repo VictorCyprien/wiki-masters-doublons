@@ -164,6 +164,8 @@
       const startPage = partial ? partial.nextPage : 0;
       const initialEntries = partial ? partial.entries : [];
       // Base des ajouts/retraits : la fraîcheur de départ, ou celle du partiel en reprise.
+      // total et newest viennent toujours du même moment : les instantanés gardent la base, pas f.total
+      // (sinon les cartes ajoutées entre deux reprises seraient comptées deux fois : faux « masked »).
       const base = partial ? { total: partial.total, newest: partial.newest } : { total: f.total, newest: f.newest ?? null };
       setState({ mode: 'loading', error: null, resumeAt: null, progress: { phase: 'full', pagesRead: startPage, pageCount, retryInMs: null } });
       const signal = ctrl.signal;
@@ -171,7 +173,7 @@
       let latest = initialEntries; // entrées lues jusqu'ici (référence du chargeur)
       let writes = Promise.resolve(); // sauvegardes en file : une à la fois, et avant tout effacement
       const save = (entries, nextPage) => {
-        const snapshot = { entries: entries.slice(), nextPage, pageCount, savedAt: now(), total: f.total, newest: base.newest, rarityCounts: { ...(f.template?.rarityCounts ?? {}) } };
+        const snapshot = { entries: entries.slice(), nextPage, pageCount, savedAt: now(), total: base.total, newest: base.newest, rarityCounts: { ...(f.template?.rarityCounts ?? {}) } };
         writes = writes.then(() => {
           if (gen !== mine) return undefined;
           return queued(() => { replay(snapshot); return cache.putPartial(uid0, snapshot); });
@@ -196,7 +198,7 @@
             let saved = false;
             try {
               const snap = {
-                entries: latest.slice(), nextPage: err.page, pageCount, savedAt: now(), total: f.total, newest: base.newest,
+                entries: latest.slice(), nextPage: err.page, pageCount, savedAt: now(), total: base.total, newest: base.newest,
                 rarityCounts: { ...(f.template?.rarityCounts ?? {}) },
               };
               await step(mine, queued(() => { replay(snap); return cache.putPartial(uid0, snap); }));

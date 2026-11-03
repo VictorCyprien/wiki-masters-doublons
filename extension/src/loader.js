@@ -175,9 +175,8 @@
       if (!locks) return fn();
       let release;
       const held = new Promise((r) => { release = r; });
-      let got;
       try {
-        got = await new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
           const opts = signal ? { signal } : {};
           Promise.resolve(locks.request('wm-doublons:net', opts, () => { resolve(true); return held; })).catch(reject);
         });
@@ -186,7 +185,6 @@
         if (err?.name === 'AbortError' || signal?.aborted) throw err;
         return fn();
       }
-      if (!got) return fn();
       try {
         return await fn();
       } finally {

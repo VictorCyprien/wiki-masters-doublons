@@ -70,10 +70,15 @@
     const sorted = Object.fromEntries(Object.entries(counts).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
     const total = json.total ?? null;
     // Entrée la plus récente (tri « Date d'ajout », plus récentes d'abord) : repère des ajouts d'une lecture.
+    // Repli prudent : si la page n'est pas triée du plus récent au plus ancien (tri ignoré par le serveur),
+    // ou si une date manque, newest vaut null et le contrôle des retraits masqués est sauté.
     let newest = null;
+    let prev = Infinity;
     for (const e of parseList(json)) {
       const t = Date.parse(e?.obtained_at);
-      if (Number.isFinite(t) && (newest === null || t > newest)) newest = t;
+      if (!Number.isFinite(t) || t > prev) { newest = null; break; }
+      if (newest === null) newest = t;
+      prev = t;
     }
     return {
       userId: parseList(json)[0]?.user_id ?? null,
