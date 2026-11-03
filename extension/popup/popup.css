@@ -1,24 +1,28 @@
 * { box-sizing: border-box; }
 body {
-  width: 340px;
+  width: 360px;
   margin: 0;
-  padding: 16px;
+  padding: 14px 16px;
   background: #0f0f11;
   color: #f4f4f5;
-  font: 14px/1.45 system-ui, sans-serif;
+  font: 13.5px/1.4 system-ui, sans-serif;
 }
-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 h1 { margin: 0; font-size: 17px; line-height: 1.25; }
-h2 { margin: 18px 0 6px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #cdeee0; }
+h2 { margin: 14px 0 5px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #cdeee0; }
 p { margin: 0 0 8px; }
 .lead { color: #f4f4f5; }
-ol { margin: 0 0 10px; padding-left: 20px; }
-li { margin-bottom: 6px; }
+ol { margin: 0 0 8px; padding-left: 20px; }
+li { margin-bottom: 3px; }
 .privacy, footer { color: #a1a1aa; font-size: 12.5px; }
-.actions { display: flex; gap: 8px; margin-top: 10px; }
+.actions { display: flex; gap: 8px; margin-top: 8px; }
 .btn {
   flex: 1;
-  padding: 9px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 6px;
+  white-space: nowrap;
   text-align: center;
   text-decoration: none;
   font-weight: 600;
@@ -28,6 +32,6 @@ li { margin-bottom: 6px; }
 }
 .btn:hover { background: #e2f6ed; }
 a:focus-visible { outline: 2px solid #f4f4f5; outline-offset: 2px; }
-footer { margin-top: 18px; padding-top: 12px; border-top: 1px solid #27272a; }
-footer p { margin-bottom: 4px; }
+footer { margin-top: 14px; padding-top: 10px; border-top: 1px solid #27272a; }
+footer p { margin-bottom: 2px; }
 footer a { color: #cdeee0; }

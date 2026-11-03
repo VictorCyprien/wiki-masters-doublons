@@ -35,6 +35,7 @@ test('A-REMPLACER seulement dans le lien GitHub', () => {
 
 test('textes exacts', () => {
   assert.match(html, /<html lang="fr">/);
+  const text = html.replace(/[\u00a0\u202f]/g, ' '); // espaces insécables comparées comme des espaces
   for (const t of [
     'Doublons pour Wiki Masters',
     "Le site ne sait pas trier tes cartes en double. L'extension ajoute un choix « Doublons » dans le tri de ta collection.",
@@ -45,12 +46,13 @@ test('textes exacts', () => {
     "Tes cartes restent dans ton navigateur : rien n'est envoyé ailleurs que sur wiki-masters.com.",
     'Soutenir',
     "L'extension est gratuite et le restera. Si elle te rend service, tu peux m'offrir un café.",
-    '☕ Buy Me a Coffee',
-    'Laisser un pourboire',
+    '☕ Offrir un café',
+    '⚡ Pourboire en crypto',
     'Extension non officielle, sans lien avec Wiki Masters.',
+    'Par Victor Cyprien · v<span id="version"></span>',
     'Code source',
   ]) {
-    assert.ok(html.includes(t), t);
+    assert.ok(text.includes(t), t);
   }
   assert.match(html, /<ol>[\s\S]*<li>[\s\S]*<li>[\s\S]*<li>[\s\S]*<\/ol>/);
   assert.match(html, /<img[^>]*src="\.\.\/icons\/icon-48\.png"/);
@@ -75,4 +77,10 @@ test('popup.js : remplit la version, sans échouer hors extension', () => {
   els.version.textContent = '';
   assert.doesNotThrow(() => run(undefined));
   assert.equal(els.version.textContent, '');
+});
+
+test('typographie : espaces insécables là où une coupure ferait mal', () => {
+  assert.ok(html.includes('1\u202f000\u00a0cartes'), 'milliers');
+  assert.ok(html.includes('«\u00a0Doublons\u00a0»'), 'guillemets');
+  assert.doesNotMatch(html, / :/, 'deux-points précédés d\'une espace sécable');
 });
