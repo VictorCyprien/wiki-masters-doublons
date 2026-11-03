@@ -326,7 +326,9 @@
       wanted.forEach((text, i) => {
         if (!cards[i]) return;
         const b = el(doc, 'span', text, { [BADGE]: '1' });
-        b.style.cssText = 'position:absolute;top:4px;right:4px;z-index:5;padding:1px 7px;border-radius:9999px;background:#111;color:#fff;font-size:12px;font-weight:700;pointer-events:none;';
+        // Haut, au centre : entre la pastille de rareté (gauche) et l'étoile favori (droite).
+        // z-index élevé : sinon le calque photo de la carte passe par-dessus.
+        b.style.cssText = 'position:absolute;top:4px;left:50%;transform:translateX(-50%);z-index:50;padding:1px 7px;border-radius:9999px;background:#111;color:#fff;font-size:12px;font-weight:700;white-space:nowrap;pointer-events:none;';
         cards[i].appendChild(b);
       });
     } catch (err) {
